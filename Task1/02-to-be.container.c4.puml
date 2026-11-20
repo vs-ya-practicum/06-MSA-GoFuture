@@ -1,8 +1,8 @@
-@startuml GoFuture To-Be Container
+@startuml To-Be Container
 !NEW_C4_STYLE=1
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
-title GoFuture To-Be Container
+title To-Be Container
 
 skinparam NoteTextAlignment left
 skinparam NoteBackgroundColor #FFCCCC
@@ -28,31 +28,31 @@ System_Boundary(gofuture, "GoFuture") {
     Container(api, "API Gateway", "HTTPS / REST", "Сохраняет точки входа и контракты API монолита. Переключает операции по этапам миграции. Адаптеры преобразуют запросы, ответы и ошибки при различиях контрактов.")
 
     note as api_compatibility_note
-        **Монолит**: клиенты обращаются к монолиту напрямую.
-        **Микросервисы**: клиенты вызывают API монолита через API Gateway. Для каждой операции API Gateway направляет
-        запросы в монолит до переключения, а после — в целевой сервис.
-    end note
-    api -[dashed]- api_compatibility_note
+    **Монолит**: клиенты обращаются к монолиту напрямую.
+    **Микросервисы**: клиенты вызывают API монолита через API Gateway. Для каждой операции API Gateway направляет
+    запросы в монолит до переключения, а после — в целевой сервис.
+end note
+api -[dashed]- api_compatibility_note
 
-    Boundary(target_backend, "Целевые сервисы и хранилища") {
-        Boundary(booking_boundary, "Booking") {
-            Container(booking, "Booking", "Доменный сервис", "Создаёт поездки и управляет их жизненным циклом. Записывает назначения водителей. Управляет корпоративными счетами.")
-            ContainerDb(booking_db, "Поездки и корпоративные счета", "PostgreSQL", "Поездки, назначения водителей и корпоративные счета.")
+Boundary(target_backend, "Целевые сервисы и хранилища") {
+    Boundary(booking_boundary, "Booking") {
+        Container(booking, "Booking", "Доменный сервис", "Создаёт поездки и управляет их жизненным циклом. Записывает назначения водителей. Управляет корпоративными счетами.")
+        ContainerDb(booking_db, "Поездки и корпоративные счета", "PostgreSQL", "Поездки, назначения водителей и корпоративные счета.")
 
-            note right of booking
-                **Монолит**: обслуживает корпоративные поездки и счета.
-                **Микросервисы**: Booking управляет корпоративными поездками. Отдельный модуль Booking управляет
-                корпоративными счетами.
-            end note
-        }
-        Boundary(driver_boundary, "Driver") {
-            Container(driver_svc, "Driver", "Доменный сервис", "Управляет данными водителей. Назначает водителя на поездку и освобождает его.")
-            ContainerDb(driver_db, "Данные водителей", "PostgreSQL", "Данные водителей и состояние их назначения на поездки.")
+        note right of booking
+            **Монолит**: обслуживает корпоративные поездки и счета.
+            **Микросервисы**: Booking управляет корпоративными поездками. Отдельный модуль Booking управляет
+            корпоративными счетами.
+        end note
+    }
+    Boundary(driver_boundary, "Driver") {
+        Container(driver_svc, "Driver", "Доменный сервис", "Управляет данными водителей. Назначает водителя на поездку и освобождает его.")
+        ContainerDb(driver_db, "Данные водителей", "PostgreSQL", "Данные водителей и состояние их назначения на поездки.")
 
-            note right of driver_svc
-                **Монолит**: Booking вызывает компонент Driver.
-                **Микросервисы**: сервис Booking обращается к сервису Driver. Driver назначает водителя на поездку и
-                освобождает его. Booking записывает назначение в данных поездки.
+        note right of driver_svc
+            **Монолит**: Booking вызывает компонент Driver.
+            **Микросервисы**: сервис Booking обращается к сервису Driver. Driver назначает водителя на поездку и
+            освобождает его. Booking записывает назначение в данных поездки.
             end note
         }
         Boundary(pricing_boundary, "Pricing") {
@@ -66,11 +66,11 @@ System_Boundary(gofuture, "GoFuture") {
             ContainerDb(payouts_db, "Выплаты и суммы к выплате", "PostgreSQL", "Суммы к выплате, корректировки и результаты выплат.")
 
             note as payouts_decision_note
-                **Монолит**: воркеры Celery обрабатывают выплаты. Общая БД монолита хранит сведения о выплатах и суммы к
-                выплате.
-                **Микросервисы**: команда Payments переносит выплаты из монолита в Payouts. Команда развёртывает Payouts
-                отдельно от сервиса Payments. Payouts учитывает суммы к выплате в своей БД и уменьшает их после успешной
-                выплаты.
+            **Монолит**: воркеры Celery обрабатывают выплаты. Общая БД монолита хранит сведения о выплатах и суммы к
+            выплате.
+            **Микросервисы**: команда Payments переносит выплаты из монолита в Payouts. Команда развёртывает Payouts
+            отдельно от сервиса Payments. Payouts учитывает суммы к выплате в своей БД и уменьшает их после успешной
+            выплаты.
             end note
             payouts -[dashed]- payouts_decision_note
         }
