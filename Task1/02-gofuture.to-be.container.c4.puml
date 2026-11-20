@@ -5,6 +5,7 @@
 title GoFuture To-Be Container
 
 skinparam NoteTextAlignment left
+skinparam NoteBackgroundColor #FFCCCC
 
 AddElementTag("transition", $bgColor="#666666", $legendText="Только на время миграции")
 AddRelTag("async", $textColor=$ARROW_FONT_COLOR, $lineColor=$ARROW_COLOR, $lineStyle=DashedLine(), $legendText="Асинхронный обмен")
@@ -24,69 +25,67 @@ System_Boundary(gofuture, "GoFuture") {
     Container(driver_app, "Водительское приложение", "iOS / Android / Huawei", "Обновляет координаты, принимает заказы на поездки и показывает выплаты.")
     Container(corporate_portal, "Корпоративный портал", "Веб-приложение", "Управляет корпоративными поездками и счетами.")
     Container(admin_portal, "Админ-панель", "Веб-приложение", "Поддерживает контроль выплат водителям.")
-    Container(api, "API Gateway", "HTTPS / REST", "Сохраняет существующие точки входа и контракты. Маршрутизирует операции по этапам миграции. Адаптеры преобразуют запросы, ответы и ошибки при различиях контрактов.")
+    Container(api, "API Gateway", "HTTPS / REST", "Сохраняет точки входа и контракты API монолита. Переключает операции по этапам миграции. Адаптеры преобразуют запросы, ответы и ошибки при различиях контрактов.")
 
     note as api_compatibility_note
         **Монолит**: клиенты обращаются к монолиту напрямую.
-        **Микросервисы**: клиенты вызывают API монолита через API Gateway. Для каждой операции API Gateway
-        направляет запросы в монолит до переключения, а после — в целевой сервис.
+        **Микросервисы**: клиенты вызывают API монолита через API Gateway. Для каждой операции API Gateway направляет
+        запросы в монолит до переключения, а после — в целевой сервис.
     end note
-    api .. api_compatibility_note
+    api -[dashed]- api_compatibility_note
 
     Boundary(target_backend, "Целевые сервисы и хранилища") {
         Boundary(booking_boundary, "Booking") {
-            Container(booking, "Booking", "Доменный сервис", "Управляет созданием и жизненным циклом поездки, хранит назначение водителя и управляет корпоративными счетами.")
-            ContainerDb(booking_db, "Хранилище Booking", "PostgreSQL", "Поездки, назначения водителей и корпоративные счета.")
+            Container(booking, "Booking", "Доменный сервис", "Создаёт поездки и управляет их жизненным циклом. Записывает назначения водителей. Управляет корпоративными счетами.")
+            ContainerDb(booking_db, "Поездки и корпоративные счета", "PostgreSQL", "Поездки, назначения водителей и корпоративные счета.")
 
-            note as booking_decision_note
+            note right of booking
                 **Монолит**: обслуживает корпоративные поездки и счета.
-                **Микросервисы**: Booking принимает от монолита корпоративные поездки. Управление
-                корпоративными счетами переходит в отдельный модуль Booking.
+                **Микросервисы**: Booking управляет корпоративными поездками. Отдельный модуль Booking управляет
+                корпоративными счетами.
             end note
-            booking .. booking_decision_note
         }
         Boundary(driver_boundary, "Driver") {
             Container(driver_svc, "Driver", "Доменный сервис", "Управляет данными водителей. Назначает водителя на поездку и освобождает его.")
-            ContainerDb(driver_db, "Хранилище Driver", "PostgreSQL", "Данные водителей и состояние их назначения на поездки.")
+            ContainerDb(driver_db, "Данные водителей", "PostgreSQL", "Данные водителей и состояние их назначения на поездки.")
 
-            note as driver_svc_decision_note
+            note right of driver_svc
                 **Монолит**: Booking вызывает компонент Driver.
-                **Микросервисы**: сервис Booking обращается к сервису Driver. Driver назначает водителя
-                на поездку и освобождает его. Booking записывает назначение в данных поездки.
+                **Микросервисы**: сервис Booking обращается к сервису Driver. Driver назначает водителя на поездку и
+                освобождает его. Booking записывает назначение в данных поездки.
             end note
-            driver_svc .. driver_svc_decision_note
         }
         Boundary(pricing_boundary, "Pricing") {
             Container(pricing, "Pricing", "Доменный сервис", "Управляет правилами ценообразования. Рассчитывает стоимость поездки и заработок водителя.")
-            ContainerDb(pricing_db, "Хранилище Pricing", "PostgreSQL", "Правила ценообразования.")
+            ContainerDb(pricing_db, "Правила ценообразования", "PostgreSQL", "Правила ценообразования.")
         }
         Boundary(payments_payouts_boundary, "Payments and Payouts") {
             Container(payments, "Payments", "Доменный сервис", "Обрабатывает платежи пассажиров и хранит их состояние.")
             Container(payouts, "Payouts", "Доменный сервис", "Команда Payments. Учитывает суммы к выплате, выполняет выплаты водителям и хранит их результаты.")
-            ContainerDb(payments_db, "Хранилище Payments", "PostgreSQL", "Платёжные операции и их состояние.")
-            ContainerDb(payouts_db, "Хранилище Payouts", "PostgreSQL", "Суммы к выплате, корректировки и результаты выплат.")
+            ContainerDb(payments_db, "Платёжные операции", "PostgreSQL", "Платёжные операции и их состояние.")
+            ContainerDb(payouts_db, "Выплаты и суммы к выплате", "PostgreSQL", "Суммы к выплате, корректировки и результаты выплат.")
 
             note as payouts_decision_note
-                **Монолит**: выплаты обрабатывают воркеры Celery. Данные о выплатах и суммах к выплате хранятся в
-                общей БД.
-                **Микросервисы**: команда Payments выделяет выплаты из монолита в отдельно развёртываемый
-                сервис Payouts. Payouts ведёт суммы к выплате в своём хранилище и уменьшает их после
-                успешной выплаты.
+                **Монолит**: воркеры Celery обрабатывают выплаты. Общая БД монолита хранит сведения о выплатах и суммы к
+                выплате.
+                **Микросервисы**: команда Payments переносит выплаты из монолита в Payouts. Команда развёртывает Payouts
+                отдельно от сервиса Payments. Payouts учитывает суммы к выплате в своей БД и уменьшает их после успешной
+                выплаты.
             end note
-            payouts .. payouts_decision_note
+            payouts -[dashed]- payouts_decision_note
         }
         Boundary(notification_boundary, "Notification") {
             Container(notification, "Notification", "Доменный сервис", "Доставляет уведомления и отслеживает состояние доставки.")
-            ContainerDb(notification_db, "Хранилище Notification", "PostgreSQL", "Состояние доставки уведомлений.")
+            ContainerDb(notification_db, "Состояние доставки", "PostgreSQL", "Состояние доставки уведомлений.")
         }
         Boundary(geography_boundary, "Geography") {
             Container(geography, "Geography", "Доменный сервис", "Обрабатывает координаты, управляет геозонами, ищет водителей поблизости и строит маршруты.")
-            ContainerDb(geography_db, "Хранилище Geography", "PostgreSQL", "Геозоны.")
+            ContainerDb(geography_db, "Геозоны", "PostgreSQL", "Геозоны.")
             ContainerDb(geo_index, "Геопоисковый индекс", "Elasticsearch", "Актуальные координаты водителей для поиска.")
         }
         Boundary(fraud_boundary, "Fraud") {
             Container(fraud, "Fraud", "Доменный сервис", "Оценивает риск по поездкам и платежам, хранит результаты оценок риска.")
-            ContainerDb(fraud_db, "Хранилище Fraud", "PostgreSQL", "Результаты оценок риска.")
+            ContainerDb(fraud_db, "Оценки риска", "PostgreSQL", "Результаты оценок риска.")
         }
 
 
@@ -95,28 +94,28 @@ System_Boundary(gofuture, "GoFuture") {
         Boundary(analytics_boundary, "Analytics") {
             Container(analytics, "Analytics", "Доменный сервис", "Принимает данные из доменных сервисов и передаёт их в аналитический конвейер.")
             Container(analytics_engine, "Аналитический конвейер", "Spark / Flink", "Обрабатывает данные для отчётности.")
-            ContainerDb(analytics_db, "Аналитическое хранилище", "ClickHouse", "Хранит аналитические наборы данных.")
+            ContainerDb(analytics_db, "Аналитические данные", "ClickHouse", "Хранит аналитические наборы данных.")
             Container(bi, "DataLens", "BI", "Отображает бизнес-метрики и финансовые отчёты.")
         }
-    }
-
-    Boundary(observability_boundary, "Observability") {
-        Container(prometheus, "Prometheus", "Метрики", "Собирает метрики критических сервисов и проверяет условия оповещений.")
-        Container(grafana, "Grafana", "Дашборды", "Показывает метрики критических сервисов.")
-        Container(loki, "Loki", "Логи", "Собирает логи сервисов.")
-        Container(alertmanager, "Alertmanager", "Оповещения", "Направляет оповещения SRE-инженерам.")
-    }
-
-    Boundary(cicd_boundary, "CI/CD") {
-        Container(jenkins, "Jenkins", "CI/CD", "Управляет сборкой, проверками и независимым развёртыванием сервисов.")
-        Container(ci_worker, "Воркеры сборки", "VM / контейнеры", "Собирают образы сервисов и выполняют проверки, включая проверки архитектурных правил.")
-        Container(registry, "Docker Registry", "Реестр образов", "Хранит образы сервисов для развёртывания.")
     }
 
     Boundary(legacy_backend, "Монолит на время миграции") {
         Container(monolith, "GoFuture Monolith", "Django", "Обслуживает операции, которые ещё не переключены на новые сервисы.", $tags="transition")
         ContainerDb(legacy_db, "Общая БД монолита", "PostgreSQL", "Данные монолита на период миграции.", $tags="transition")
     }
+}
+
+Boundary(observability_boundary, "Observability") {
+    Container(prometheus, "Prometheus", "Метрики", "Собирает метрики критических сервисов и проверяет условия оповещений.")
+    Container(grafana, "Grafana", "Дашборды", "Показывает метрики критических сервисов.")
+    Container(loki, "Loki", "Логи", "Собирает логи сервисов.")
+    Container(alertmanager, "Alertmanager", "Оповещения", "Направляет оповещения SRE-инженерам.")
+}
+
+Boundary(cicd_boundary, "CI/CD") {
+    Container(jenkins, "Jenkins", "CI/CD", "Управляет сборкой, проверками и независимым развёртыванием сервисов.")
+    Container(ci_worker, "Воркеры сборки", "VM / контейнеры", "Собирают образы сервисов и выполняют проверки, включая проверки архитектурных правил.")
+    Container(registry, "Docker Registry", "Реестр образов", "Хранит образы сервисов для развёртывания.")
 }
 
 Boundary(external_systems, "External") {
@@ -147,9 +146,9 @@ Rel(admin_portal, api, "Контроль выплат", "Существующи�
 Rel(api, monolith, "До переключения операции", "API монолита")
 Rel(monolith, legacy_db, "Читает и сохраняет данные", "SQL")
 Rel(api, booking, "После переключения: запрос стоимости, создание и статус поездки, корпоративные поездки и счета", "HTTPS / REST")
-Rel(api, driver_svc, "Передаёт операции управления водителем", "HTTPS / REST")
+Rel(api, driver_svc, "Направляет запросы на управление водителями", "HTTPS / REST")
 Rel(api, geography, "Передаёт обновления координат", "HTTPS / REST")
-Rel(api, payouts, "Передаёт запросы на сведения о выплатах и их контроль", "HTTPS / REST")
+Rel(api, payouts, "Направляет запросы на получение сведений о выплатах и на контроль выплат", "HTTPS / REST")
 
 Rel(booking, pricing, "Запрашивает расчёт стоимости поездки", "HTTPS / REST")
 Rel(booking, driver_svc, "Запрашивает назначение водителя на поездку или его освобождение", "Контракт сервиса")
@@ -162,8 +161,8 @@ Rel(driver_svc, pricing, "Запрашивает расчёт заработка
 Rel(driver_svc, payouts, "Запрашивает сведения о выплатах", "Контракт сервиса")
 
 Rel(booking, broker, "Публикует изменения поездок и запросы на уведомления", "AMQP", $tags="async")
-Rel(driver_svc, broker, "Получает сведения о завершённых поездках и публикует рассчитанный заработок", "AMQP", $tags="async")
-Rel(payouts, broker, "Получает рассчитанный заработок для учёта суммы к выплате", "AMQP", $tags="async")
+Rel(driver_svc, broker, "Получает сведения о завершённых поездках. Публикует результаты расчёта заработка", "AMQP", $tags="async")
+Rel(payouts, broker, "Получает результаты расчёта заработка для учёта суммы к выплате", "AMQP", $tags="async")
 Rel(payments, broker, "Публикует результаты платежей", "AMQP", $tags="async")
 Rel(geography, broker, "Публикует метрики геопоиска", "AMQP", $tags="async")
 Rel(notification, broker, "Получает запросы на уведомления", "AMQP", $tags="async")
