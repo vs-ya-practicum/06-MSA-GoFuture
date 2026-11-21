@@ -34,7 +34,7 @@ System_Boundary(gofuture, "GoFuture") {
 end note
 api -[dashed]- api_compatibility_note
 
-Boundary(target_backend, "Целевые сервисы и хранилища") {
+Boundary(target_backend, "Микросервисная платформа") {
     Boundary(booking_boundary, "Booking") {
         Container(booking, "Booking", "Доменный сервис", "Создаёт поездки и управляет их жизненным циклом. Записывает назначения водителей. Управляет корпоративными счетами.")
         ContainerDb(booking_db, "Поездки и корпоративные счета", "PostgreSQL", "Поездки, назначения водителей и корпоративные счета.")
@@ -89,7 +89,13 @@ Boundary(target_backend, "Целевые сервисы и хранилища") 
         }
 
 
-        ContainerQueue(broker, "Брокер сообщений", "RabbitMQ", "Передаёт сообщения между доменными сервисами.")
+        ContainerQueue(kafka, "Kafka", "Платформа событий", "Передаёт потоки событий между доменными сервисами.")
+
+        note as kafka_decision_note
+            **Микросервисы**: Kafka разделяет потоки событий на партиции для параллельной обработки.
+            Пропускную способность проверяют при целевой нагрузке.
+        end note
+        kafka -[dashed]- kafka_decision_note
 
         Boundary(analytics_boundary, "Analytics") {
             Container(analytics, "Analytics", "Доменный сервис", "Принимает данные из доменных сервисов и передаёт их в аналитический конвейер.")
@@ -102,6 +108,15 @@ Boundary(target_backend, "Целевые сервисы и хранилища") 
     Boundary(legacy_backend, "Монолит на время миграции") {
         Container(monolith, "GoFuture Monolith", "Django", "Обслуживает операции, которые ещё не переключены на новые сервисы.", $tags="transition")
         ContainerDb(legacy_db, "Общая БД монолита", "PostgreSQL", "Данные монолита на период миграции.", $tags="transition")
+        ContainerQueue(rabbitmq, "RabbitMQ", "AMQP", "Сохраняет очереди фоновых задач монолита на время миграции.", $tags="transition")
+        Container(legacy_workers, "Воркеры Celery", "Celery", "Выполняют задачи уведомлений и выплат, которые ещё не перенесли в сервисы.", $tags="transition")
+
+        note as rabbitmq_decision_note
+            **Монолит**: RabbitMQ сохраняет контракты очередей Celery. Поэтому Notification можно
+            выделить до замены очереди. При переключении каждый сценарий уведомлений использует
+            один источник. RabbitMQ отключают после переноса фоновых задач и обработки остатка очередей.
+        end note
+        rabbitmq -[dashed]- rabbitmq_decision_note
     }
 }
 
@@ -145,6 +160,10 @@ Rel(corporate_portal, api, "Корпоративные поездки и сче�
 Rel(admin_portal, api, "Контроль выплат", "Существующий интерфейс")
 Rel(api, monolith, "До переключения операции", "API монолита")
 Rel(monolith, legacy_db, "Читает и сохраняет данные", "SQL")
+Rel(monolith, rabbitmq, "Ставит в очередь задачи уведомлений и выплат до их переноса", "AMQP", $tags="async")
+Rel(legacy_workers, rabbitmq, "Получает задачи, которые ещё выполняют воркеры Celery", "AMQP", $tags="async")
+Rel(legacy_workers, legacy_db, "Читает и сохраняет данные фоновых задач", "SQL")
+Rel(notification, rabbitmq, "Получает задачи монолита до перехода на события Kafka", "AMQP", $tags="async")
 Rel(api, booking, "После переключения: запрос стоимости, создание и статус поездки, корпоративные поездки и счета", "HTTPS / REST")
 Rel(api, driver_svc, "Направляет запросы на управление водителями", "HTTPS / REST")
 Rel(api, geography, "Передаёт обновления координат", "HTTPS / REST")
@@ -160,13 +179,14 @@ Rel(payments, fraud, "Передаёт данные транзакции для 
 Rel(driver_svc, pricing, "Запрашивает расчёт заработка", "Контракт сервиса")
 Rel(driver_svc, payouts, "Запрашивает сведения о выплатах", "Контракт сервиса")
 
-Rel(booking, broker, "Публикует изменения поездок и запросы на уведомления", "AMQP", $tags="async")
-Rel(driver_svc, broker, "Получает сведения о завершённых поездках. Публикует результаты расчёта заработка", "AMQP", $tags="async")
-Rel(payouts, broker, "Получает результаты расчёта заработка для учёта суммы к выплате", "AMQP", $tags="async")
-Rel(payments, broker, "Публикует результаты платежей", "AMQP", $tags="async")
-Rel(geography, broker, "Публикует метрики геопоиска", "AMQP", $tags="async")
-Rel(notification, broker, "Получает запросы на уведомления", "AMQP", $tags="async")
-Rel(analytics, broker, "Получает изменения поездок, результаты платежей и метрики геопоиска", "AMQP", $tags="async")
+Rel(monolith, kafka, "Публикует события поездок до переключения на Booking", "Kafka", $tags="async")
+Rel(booking, kafka, "Публикует события поездок после переключения с монолита", "Kafka", $tags="async")
+Rel(driver_svc, kafka, "Получает события завершения поездок. Публикует результаты расчёта заработка", "Kafka", $tags="async")
+Rel(payouts, kafka, "Получает результаты расчёта заработка для учёта суммы к выплате", "Kafka", $tags="async")
+Rel(payments, kafka, "Публикует результаты платежей", "Kafka", $tags="async")
+Rel(geography, kafka, "Публикует обновления координат и метрики геопоиска", "Kafka", $tags="async")
+Rel(notification, kafka, "Получает события поездок для отправки уведомлений после перехода с RabbitMQ", "Kafka", $tags="async")
+Rel(analytics, kafka, "Получает события поездок, результаты платежей и метрики геопоиска", "Kafka", $tags="async")
 Rel(analytics, analytics_engine, "Передаёт данные для обработки")
 Rel(analytics_engine, analytics_db, "Записывает аналитические данные")
 Rel(bi, analytics_db, "Запрашивает данные для отчётов", "SQL")
