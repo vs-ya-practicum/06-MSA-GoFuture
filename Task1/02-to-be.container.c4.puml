@@ -8,6 +8,11 @@ skinparam NoteTextAlignment left
 skinparam NoteBackgroundColor #FFCCCC
 
 AddElementTag("transition", $bgColor="#666666", $legendText="Только на время миграции")
+' При NEW_C4_STYLE=1 библиотека меняет местами $bgColor и $fontColor.
+AddElementTag("postgresql", $bgColor="#172538", $fontColor="#D5E5F5", $borderColor="#4F76A0", $legendText="PostgreSQL")
+AddElementTag("postgresql-transition", $bgColor="#172538", $fontColor="#D5E5F5", $borderColor="#4F76A0", $borderStyle=DashedLine(), $legendText="PostgreSQL на время миграции")
+AddElementTag("data-infrastructure", $bgColor="#302000", $fontColor="#FFE6AD", $borderColor="#956812", $legendText="Kafka, Redis, Elasticsearch, ClickHouse")
+AddElementTag("data-infrastructure-transition", $bgColor="#302000", $fontColor="#FFE6AD", $borderColor="#956812", $borderStyle=DashedLine(), $legendText="RabbitMQ на время миграции")
 AddRelTag("async", $textColor=$ARROW_FONT_COLOR, $lineColor=$ARROW_COLOR, $lineStyle=DashedLine(), $legendText="Асинхронный обмен")
 
 LAYOUT_WITH_LEGEND()
@@ -35,9 +40,17 @@ end note
 api -[dashed]- api_compatibility_note
 
 Boundary(target_backend, "Микросервисная платформа") {
+    ContainerDb(platform_redis, "Redis платформы", "Кеш", "Общий кеш для Pricing, Notification и Geography.", $tags="data-infrastructure")
+
+    note as redis_platform_note
+        **Микросервисы**: Pricing, Notification и Geography переходят на Redis платформы.
+        Pricing загружает правила из своей БД и сбрасывает записи кеша при изменении правил.
+    end note
+    platform_redis -[dashed]- redis_platform_note
+
     Boundary(booking_boundary, "Booking") {
         Container(booking, "Booking", "Доменный сервис", "Создаёт поездки и управляет их жизненным циклом. Записывает назначения водителей. Управляет корпоративными счетами.")
-        ContainerDb(booking_db, "Поездки и корпоративные счета", "PostgreSQL", "Поездки, назначения водителей и корпоративные счета.")
+        ContainerDb(booking_db, "Поездки и корпоративные счета", "PostgreSQL", "Поездки, назначения водителей и корпоративные счета.", $tags="postgresql")
 
         note right of booking
             **Монолит**: обслуживает поездки индивидуальных пассажиров, корпоративные поездки и счета.
@@ -47,7 +60,7 @@ Boundary(target_backend, "Микросервисная платформа") {
     }
     Boundary(driver_boundary, "Driver") {
         Container(driver_svc, "Driver", "Доменный сервис", "Управляет данными водителей. Назначает водителя на поездку и освобождает его.")
-        ContainerDb(driver_db, "Данные водителей", "PostgreSQL", "Данные водителей и состояние их назначения на поездки.")
+        ContainerDb(driver_db, "Данные водителей", "PostgreSQL", "Данные водителей и состояние их назначения на поездки.", $tags="postgresql")
 
         note right of driver_svc
             **Монолит**: Booking вызывает компонент Driver.
@@ -57,13 +70,13 @@ Boundary(target_backend, "Микросервисная платформа") {
         }
         Boundary(pricing_boundary, "Pricing") {
             Container(pricing, "Pricing", "Доменный сервис", "Управляет правилами ценообразования. Рассчитывает стоимость поездки и заработок водителя.")
-            ContainerDb(pricing_db, "Правила ценообразования", "PostgreSQL", "Правила ценообразования.")
+            ContainerDb(pricing_db, "Правила ценообразования", "PostgreSQL", "Правила ценообразования.", $tags="postgresql")
         }
         Boundary(payments_payouts_boundary, "Payments and Payouts") {
             Container(payments, "Payments", "Доменный сервис", "Обрабатывает платежи пассажиров и хранит их состояние.")
             Container(payouts, "Payouts", "Доменный сервис", "Команда Payments. Учитывает суммы к выплате, выполняет выплаты водителям и хранит их результаты.")
-            ContainerDb(payments_db, "Платёжные операции", "PostgreSQL", "Платёжные операции и их состояние.")
-            ContainerDb(payouts_db, "Выплаты и суммы к выплате", "PostgreSQL", "Суммы к выплате, корректировки и результаты выплат.")
+            ContainerDb(payments_db, "Платёжные операции", "PostgreSQL", "Платёжные операции и их состояние.", $tags="postgresql")
+            ContainerDb(payouts_db, "Выплаты и суммы к выплате", "PostgreSQL", "Суммы к выплате, корректировки и результаты выплат.", $tags="postgresql")
 
             note as payouts_decision_note
             **Монолит**: воркеры Celery обрабатывают выплаты. Общая БД монолита хранит сведения о выплатах и суммы к
@@ -76,20 +89,20 @@ Boundary(target_backend, "Микросервисная платформа") {
         }
         Boundary(notification_boundary, "Notification") {
             Container(notification, "Notification", "Доменный сервис", "Доставляет уведомления и отслеживает состояние доставки.")
-            ContainerDb(notification_db, "Состояние доставки", "PostgreSQL", "Состояние доставки уведомлений.")
+            ContainerDb(notification_db, "Состояние доставки", "PostgreSQL", "Состояние доставки уведомлений.", $tags="postgresql")
         }
         Boundary(geography_boundary, "Geography") {
             Container(geography, "Geography", "Доменный сервис", "Обрабатывает координаты, управляет геозонами, ищет водителей поблизости и строит маршруты.")
-            ContainerDb(geography_db, "Геозоны", "PostgreSQL", "Геозоны.")
-            ContainerDb(geo_index, "Геопоисковый индекс", "Elasticsearch", "Актуальные координаты водителей для поиска.")
+            ContainerDb(geography_db, "Геозоны", "PostgreSQL", "Геозоны.", $tags="postgresql")
+            ContainerDb(geo_index, "Геопоисковый индекс", "Elasticsearch", "Актуальные координаты водителей для поиска.", $tags="data-infrastructure")
         }
         Boundary(fraud_boundary, "Fraud") {
             Container(fraud, "Fraud", "Доменный сервис", "Оценивает риск по поездкам и платежам, хранит результаты оценок риска.")
-            ContainerDb(fraud_db, "Оценки риска", "PostgreSQL", "Результаты оценок риска.")
+            ContainerDb(fraud_db, "Оценки риска", "PostgreSQL", "Результаты оценок риска.", $tags="postgresql")
         }
 
 
-        ContainerQueue(kafka, "Kafka", "Платформа событий", "Передаёт потоки событий между доменными сервисами.")
+        ContainerQueue(kafka, "Kafka", "Платформа событий", "Передаёт потоки событий между доменными сервисами.", $tags="data-infrastructure")
 
         note as kafka_decision_note
             **Микросервисы**: Kafka разделяет потоки событий на партиции для параллельной обработки.
@@ -100,16 +113,22 @@ Boundary(target_backend, "Микросервисная платформа") {
         Boundary(analytics_boundary, "Analytics") {
             Container(analytics, "Analytics", "Доменный сервис", "Принимает данные из доменных сервисов и передаёт их в аналитический конвейер.")
             Container(analytics_engine, "Аналитический конвейер", "Spark / Flink", "Обрабатывает данные для отчётности.")
-            ContainerDb(analytics_db, "Аналитические данные", "ClickHouse", "Хранит аналитические наборы данных.")
+            ContainerDb(analytics_db, "Аналитические данные", "ClickHouse", "Хранит аналитические наборы данных.", $tags="data-infrastructure")
             Container(bi, "DataLens", "BI", "Отображает бизнес-метрики и финансовые отчёты.")
         }
     }
 
     Boundary(legacy_backend, "Монолит на время миграции") {
         Container(monolith, "GoFuture Monolith", "Django", "Обслуживает операции, которые ещё не переключены на новые сервисы.", $tags="transition")
-        ContainerDb(legacy_db, "Общая БД монолита", "PostgreSQL", "Данные монолита на период миграции.", $tags="transition")
-        ContainerQueue(rabbitmq, "RabbitMQ", "AMQP", "Сохраняет очереди фоновых задач монолита на время миграции.", $tags="transition")
+        ContainerDb(legacy_db, "Общая БД монолита", "PostgreSQL", "Данные монолита на период миграции.", $tags="postgresql-transition")
+        ContainerDb(legacy_redis, "Redis монолита", "Кеш", "Общий кеш на время миграции.", $tags="data-infrastructure")
+        ContainerQueue(rabbitmq, "RabbitMQ", "AMQP", "Сохраняет очереди фоновых задач монолита на время миграции.", $tags="data-infrastructure-transition")
         Container(legacy_workers, "Воркеры Celery", "Celery", "Выполняют задачи уведомлений и выплат, которые ещё не перенесли в сервисы.", $tags="transition")
+
+        note as redis_legacy_note
+            **Монолит**: общий Redis отключают после переключения всех его потребителей.
+        end note
+        legacy_redis -[dashed]- redis_legacy_note
 
         note as rabbitmq_decision_note
             **Монолит**: RabbitMQ сохраняет контракты очередей Celery. Поэтому Notification можно
@@ -160,6 +179,7 @@ Rel(corporate_portal, api, "Корпоративные поездки и сче�
 Rel(admin_portal, api, "Контроль выплат", "Существующий интерфейс")
 Rel(api, monolith, "До переключения операции", "API монолита")
 Rel(monolith, legacy_db, "Читает и сохраняет данные", "SQL")
+Rel(monolith, legacy_redis, "Использует общий кеш до переключения потребителей")
 Rel(monolith, rabbitmq, "Ставит в очередь задачи уведомлений и выплат до их переноса", "AMQP", $tags="async")
 Rel(legacy_workers, rabbitmq, "Получает задачи, которые ещё выполняют воркеры Celery", "AMQP", $tags="async")
 Rel(legacy_workers, legacy_db, "Читает и сохраняет данные фоновых задач", "SQL")
@@ -194,6 +214,11 @@ Rel(bi, analytics_db, "Запрашивает данные для отчётов
 Rel(booking, booking_db, "Хранит поездки, назначения водителей и корпоративные счета", "SQL")
 Rel(driver_svc, driver_db, "Хранит данные водителей и состояние их назначения на поездки", "SQL")
 Rel(pricing, pricing_db, "Хранит правила ценообразования", "SQL")
+Rel(pricing, platform_redis, "Кеширует правила ценообразования")
+Rel(notification, platform_redis, "Кеширует данные об устройствах после переключения")
+Rel(geography, platform_redis, "Кеширует геоданные после переключения")
+Rel(notification, legacy_redis, "Использует общий кеш данных об устройствах на время миграции")
+Rel(geography, legacy_redis, "Использует общий кеш геоданных на время миграции")
 Rel(payments, payments_db, "Хранит состояние платежей", "SQL")
 Rel(payouts, payouts_db, "Учитывает суммы к выплате и результаты выплат", "SQL")
 Rel(notification, notification_db, "Хранит состояние доставки", "SQL")
