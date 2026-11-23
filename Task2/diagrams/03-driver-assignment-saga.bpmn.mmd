@@ -1,0 +1,49 @@
+bpmn LR
+layout elk
+
+  pool driver_assignment "Saga назначения\ водителя" LR
+    lane process_flow "" LR
+      message start dispatch_requested "BookingCreatedFact"
+      subprocess request_assignment "AssignDriver\ Запросить назначение\ и дождаться\ результата"
+        message boundary cancellation_requested "BookingCancellationRequestedFact"
+        timer boundary assignment_deadline "Срок назначения\ истёк"
+      exclusive gate assignment_result "Результат\ назначения?"
+        port assignment_available_out n
+        port assignment_unavailable_out s
+      service task confirm_assignment "Запросить\ подтверждение\ назначения в Booking"
+      exclusive gate assignment_confirmed "Назначение\ подтверждено?"
+        port assignment_confirmed_out n
+        port assignment_rejected_out s
+      end assignment_saga_completed "Назначение\ подтверждено"
+
+      service task start_cancellation "Начать отмену в\ Booking"
+      send task publish_release "Отправить\ ReleaseDriver"
+        error boundary release_delivery_failed "Временный сбой\ отправки"
+      timer catch retry_release_delivery "Задержка перед\ повтором отправки"
+        port retry_release_delivery_out n
+      service task release_assignment "Закрыть предложение\ или освободить\ водителя в Driver"
+        error boundary release_processing_failed "Временный сбой\ обработки"
+      timer catch retry_release_processing "Задержка перед\ повтором обработки"
+        port retry_release_processing_out s
+      message catch release_confirmed "DriverReleasedFact"
+      service task complete_cancellation "Завершить отмену в\ Booking"
+      end cancellation_saga_completed "Поездка отменена"
+      comment late_assignment "При позднем ответе\ для того же\ dispatchId процесс\ продолжает отмену."
+
+      dispatch_requested --> request_assignment --> assignment_result
+      assignment_available_out --> confirm_assignment "DriverAssignedFact"
+      assignment_unavailable_out --> start_cancellation "DriverAssignmentUnavailableFact"
+      cancellation_requested --> start_cancellation
+      assignment_deadline --> start_cancellation
+        route exit:s depth:1
+      confirm_assignment --> assignment_confirmed
+      assignment_confirmed_out --> assignment_saga_completed "Да"
+      assignment_rejected_out --> start_cancellation "Booking отклонил\ подтверждение"
+
+      start_cancellation --> publish_release --> release_assignment
+      release_assignment --> release_confirmed --> complete_cancellation --> cancellation_saga_completed
+      release_delivery_failed --> retry_release_delivery
+      retry_release_delivery_out --> publish_release "Та же команда и\ идентификатор"
+      release_processing_failed --> retry_release_processing
+      retry_release_processing_out --> release_assignment "Тот же dispatchId"
+      start_cancellation --- late_assignment

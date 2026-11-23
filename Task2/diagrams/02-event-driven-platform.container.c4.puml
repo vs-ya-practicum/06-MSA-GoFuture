@@ -1,0 +1,151 @@
+@startuml GoFuture Event-Driven Platform Container
+!NEW_C4_STYLE=1
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title GoFuture Event-Driven Platform Container
+
+skinparam NoteTextAlignment left
+skinparam NoteBackgroundColor #FFCCCC
+
+' При NEW_C4_STYLE=1 библиотека меняет местами $bgColor и $fontColor.
+AddElementTag("postgresql", $bgColor="#172538", $fontColor="#D5E5F5", $borderColor="#4F76A0", $legendText="PostgreSQL")
+AddElementTag("data-infrastructure", $bgColor="#302000", $fontColor="#FFE6AD", $borderColor="#956812", $legendText="Kafka, Redis, Elasticsearch")
+AddRelTag("async", $textColor=$ARROW_FONT_COLOR, $lineColor=$ARROW_COLOR, $lineStyle=DashedLine(), $legendText="Сообщения Kafka")
+AddRelTag("metrics", $textColor=$ARROW_FONT_COLOR, $lineColor=$ARROW_COLOR, $lineStyle=DottedLine(), $legendText="Сбор метрик")
+LAYOUT_WITH_LEGEND()
+LAYOUT_TOP_DOWN()
+SHOW_PERSON_OUTLINE()
+
+Person(passenger, "Пассажир")
+Person(driver_user, "Водитель")
+Person(sre, "SRE-инженер")
+System_Ext(yandex_pay, "Яндекс Пэй", "Платёжный шлюз.")
+System_Ext(yandex_maps, "Яндекс Карты", "Карты и маршруты.")
+
+System_Boundary(gofuture, "Микросервисная платформа GoFuture") {
+    Container(passenger_app, "Пассажирское приложение", "iOS / Android / Huawei", "Показывает стоимость и статус поездки. Принимает подтверждение и отмену.")
+    Container(driver_app, "Водительское приложение", "iOS / Android / Huawei", "Передаёт координаты, принимает ответы на предложения и отмечает начало и завершение поездки.")
+    Container(api, "API Gateway", "HTTPS / REST", "Маршрутизирует операции приложений к доменным сервисам.")
+    Container(booking, "Booking", "Доменный сервис", "Управляет поездкой, подтверждает назначение и завершает отмену. Хранит принятую стоимость и статус оплаты.")
+
+    Container(camunda, "Оркестратор Saga", "Camunda 8", "Выполняет BPMN назначения водителя. Хранит ход процесса, сроки и повторы.")
+    Container(camunda_worker, "Обработчик Camunda", "Kafka и контракт Booking", "Передаёт события в Camunda и выполняет её задания через Kafka и Booking.")
+
+    note right of camunda
+        **Parallel Saga назначения водителя**
+        Camunda координирует назначение и компенсацию.
+        Booking проверяет состояние поездки перед изменением.
+        При отмене Driver закрывает предложение или освобождает водителя.
+        ADR → «Выполнение Saga».
+    end note
+
+    Container(driver, "Driver", "Доменный сервис", "Выбирает кандидатов, предлагает поездку, назначает и освобождает водителя. Запрашивает расчёт заработка.")
+    Container(geography, "Geography", "Доменный сервис", "Определяет регион и зону по координатам. Принимает и индексирует позиции, ищет кандидатов и строит маршруты.")
+    Container(pricing, "Pricing", "Доменный сервис", "Применяет правила и актуальные показатели спроса и предложения. Рассчитывает стоимость поездки и заработок водителя.")
+    Container(payments, "Payments", "Доменный сервис", "Списывает стоимость завершённой поездки. Учитывает результат и сверяет неопределённые операции со шлюзом.")
+    Container(fraud, "Fraud", "Доменный сервис", "Оценивает риск поездки и платежа.")
+    Container(notification, "Notification", "Доменный сервис", "Уведомляет пассажира об изменении статуса поездки.")
+    Container(payouts, "Payouts", "Доменный сервис", "Учитывает заработок в сумме к выплате водителю.")
+    Container(analytics, "Analytics", "Доменный сервис", "Передаёт данные о поездках и платежах в аналитический конвейер.")
+
+    ContainerQueue(kafka, "Kafka", "Apache Kafka", "Хранит региональные потоки событий и команды назначения и оплаты.", $tags="data-infrastructure")
+
+    note as kafka_decision_note
+        **Региональные топики: stream.regionId.v1**
+        Geography определяет регион места посадки и позиции водителя.
+        Booking сохраняет регион посадки для поездки, назначения и оплаты.
+        Ключи партиций внутри региона: bookingId, driverId, zoneId.
+        ADR → «Региональные топики и каталог сообщений Kafka».
+
+        **Надёжная доставка**
+        Транзакционный outbox, подтверждение реплицированной записи,
+        идемпотентная обработка и повторная доставка.
+        ADR → «Надёжная доставка и восстановление».
+        [[../../01-event-driven-platform.adr.ru.md ADR. Событийная архитектура платформы GoFuture]]
+    end note
+    kafka -[dashed]- kafka_decision_note
+
+    Container(pricing_stream, "Сервис потоковой обработки для Pricing", "Apache Flink", "Считает спрос и оценивает доступное предложение по зонам и временным окнам.")
+
+    note as pricing_stream_note
+        Flink сопоставляет координаты и назначения по driverId между регионами.
+        Восстанавливает состояние и позиции чтения из контрольной точки
+        и транзакционно записывает показатели в Kafka.
+        ADR → «Потоковая обработка для динамического ценообразования».
+    end note
+    pricing_stream -[dashed]- pricing_stream_note
+
+    ContainerDb(booking_db, "Данные поездок", "PostgreSQL", "Хранит поездки, данные попыток, подтверждённые назначения и outbox.", $tags="postgresql")
+    ContainerDb(driver_db, "Данные водителей", "PostgreSQL", "Хранит предложения, назначения и outbox.", $tags="postgresql")
+    ContainerDb(payments_db, "Платёжные операции", "PostgreSQL", "Хранит операции, результат сверки и outbox.", $tags="postgresql")
+    ContainerDb(geo_index, "Геопоисковый индекс", "Elasticsearch", "Хранит актуальные координаты для поиска водителей.", $tags="data-infrastructure")
+    ContainerDb(pricing_cache, "Redis платформы", "Redis", "Хранит кеш правил Pricing и актуальные показатели по зонам.", $tags="data-infrastructure")
+
+    Boundary(monitoring, "Мониторинг") {
+        Container(prometheus, "Prometheus", "Сбор метрик", "Собирает метрики приложений, Flink и экспортёров. Проверяет условия оповещений.")
+        Container(grafana, "Grafana", "Дашборды", "Показывает метрики платформы по регионам.")
+        Container(alertmanager, "Alertmanager", "Оповещения", "Направляет оповещения SRE-инженерам.")
+        Container(kafka_exporter, "Kafka Exporter", "Экспортёр метрик", "Предоставляет метрики отставания группы потребителей Geography по регионам и партициям.")
+        Container(node_exporter, "Node Exporter", "Экспортёр метрик хостов", "Предоставляет метрики дискового ввода-вывода брокеров Kafka и памяти воркеров Flink.")
+    }
+}
+
+Rel(passenger, passenger_app, "Запрашивает стоимость, подтверждает и отслеживает поездку")
+Rel(driver_user, driver_app, "Принимает предложение, начинает и завершает поездку")
+Rel(passenger_app, api, "Стоимость, подтверждение, статус и отмена", "HTTPS / REST")
+Rel(driver_app, api, "Предложения, координаты, начало и завершение поездки", "HTTPS / REST")
+Rel(api, booking, "Стоимость, жизненный цикл и статус поездки", "HTTPS / REST")
+Rel(api, driver, "Чтение предложений и ответы водителя", "HTTPS / REST")
+Rel(api, geography, "Обновления координат", "HTTPS / REST")
+Rel(booking, pricing, "Запрашивает стоимость поездки", "HTTPS / REST")
+Rel(booking, geography, "Запрашивает маршрут и регион места посадки", "HTTPS / REST")
+Rel(booking, fraud, "Проверяет риск до подтверждения поездки", "Контракт сервиса")
+Rel(driver, geography, "Ищет кандидатов рядом с местом посадки", "HTTPS / REST")
+Rel(driver, pricing, "Запрашивает расчёт заработка", "HTTPS / REST")
+Rel(payments, fraud, "Проверяет риск платежа", "Контракт сервиса")
+Rel(payments, yandex_pay, "Списывает стоимость и сверяет результат", "HTTPS")
+Rel(geography, yandex_maps, "Запрашивает геоданные и маршруты", "HTTPS")
+
+Rel(booking, kafka, "Публикует события поездки и запрос отмены.\nОтправляет команды освобождения водителя и списания стоимости поездки", "Kafka", $tags="async")
+Rel(kafka, booking, "Доставляет DriverReleasedFact и результаты оплаты", "Kafka", $tags="async")
+Rel(kafka, camunda_worker, "Доставляет события создания поездки, запроса отмены и результаты Driver", "Kafka", $tags="async")
+Rel(camunda_worker, kafka, "Отправляет команды назначения и освобождения для Saga", "Kafka", $tags="async")
+Rel(camunda_worker, camunda, "Запускает Saga, передаёт результаты и выполняет задания", "API Camunda")
+Rel(camunda_worker, booking, "Запрашивает подтверждение назначения, начало и завершение отмены", "Контракт сервиса")
+Rel(kafka, driver, "Доставляет команды назначения и освобождения,\nа также события завершения поездок\nдля освобождения водителя и расчёта заработка", "Kafka", $tags="async")
+Rel(driver, kafka, "Публикует результаты назначения, освобождения\nи расчёта заработка", "Kafka", $tags="async")
+Rel(geography, kafka, "Публикует обновления координат водителей", "Kafka", $tags="async")
+Rel(kafka, geography, "Доставляет обновления координат для индексации", "Kafka", $tags="async")
+Rel(kafka, pricing_stream, "Доставляет события поездок, координат и назначений.\nПримеры: BookingCreatedFact, DriverLocationUpdatedFact", "Kafka", $tags="async")
+Rel(pricing_stream, kafka, "Публикует показатели спроса и предложения по зонам", "Kafka", $tags="async")
+Rel(kafka, pricing, "Доставляет показатели спроса и предложения для расчёта стоимости", "Kafka", $tags="async")
+Rel(kafka, payments, "Доставляет команды на оплату завершённых поездок", "Kafka", $tags="async")
+Rel(payments, kafka, "Публикует результаты оплаты", "Kafka", $tags="async")
+Rel(kafka, notification, "Доставляет изменения статуса поездок для уведомления пассажиров", "Kafka", $tags="async")
+Rel(kafka, payouts, "Доставляет результаты расчёта заработка для учёта выплаты", "Kafka", $tags="async")
+Rel(kafka, analytics, "Доставляет события поездок и результаты оплаты для отчётности", "Kafka", $tags="async")
+
+Rel(booking, booking_db, "Записывает состояние поездки и outbox одной транзакцией", "SQL")
+Rel(driver, driver_db, "Записывает предложения, назначения и outbox одной транзакцией", "SQL")
+Rel(payments, payments_db, "Записывает платёжные операции и outbox одной транзакцией", "SQL")
+Rel(geography, geo_index, "Индексирует только более свежие координаты и ищет кандидатов", "HTTPS")
+Rel(pricing, pricing_cache, "Применяет только более свежие показатели зоны и читает их при расчёте", "Redis")
+
+Rel(prometheus, api, "Собирает метрики API-запросов", "HTTP", $tags="metrics")
+Rel(prometheus, booking, "Собирает метрики длительности назначения водителя и пула соединений PostgreSQL", "HTTP", $tags="metrics")
+Rel(prometheus, camunda_worker, "Собирает метрики исходов попыток назначения водителя", "HTTP", $tags="metrics")
+Rel(prometheus, driver, "Собирает метрики пула соединений PostgreSQL", "HTTP", $tags="metrics")
+Rel(prometheus, pricing, "Собирает метрики расчёта стоимости и применения базовых правил", "HTTP", $tags="metrics")
+Rel(prometheus, payments, "Собирает метрики списания стоимости поездки и пула соединений PostgreSQL", "HTTP", $tags="metrics")
+Rel(prometheus, geography, "Собирает метрики публикации обновлений координат и их доступности в геопоиске", "HTTP", $tags="metrics")
+Rel(prometheus, pricing_stream, "Собирает метрики backpressure по подзадачам через Prometheus Reporter", "HTTP", $tags="metrics")
+Rel(prometheus, kafka_exporter, "Собирает метрики отставания группы потребителей Geography", "HTTP", $tags="metrics")
+Rel(prometheus, node_exporter, "Собирает метрики дисков брокеров Kafka и памяти воркеров Flink", "HTTP", $tags="metrics")
+Rel(kafka_exporter, kafka, "Читает конечные смещения партиций и зафиксированные смещения группы потребителей Geography", "Kafka API")
+Rel(grafana, prometheus, "Запрашивает метрики для дашбордов", "PromQL")
+Rel(prometheus, alertmanager, "Передаёт оповещения по сработавшим правилам", "HTTP")
+Rel(sre, grafana, "Просматривает метрики платформы")
+Rel(alertmanager, sre, "Доставляет оповещения")
+
+@enduml
