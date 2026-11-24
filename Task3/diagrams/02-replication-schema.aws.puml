@@ -1,0 +1,83 @@
+@startuml GoFuture Cross-Region Replication
+
+!include <awslib/AWSCommon>
+!include <awslib/AWSSimplified>
+!include <awslib/Groups/AWSCloud>
+!include <awslib/Groups/Region>
+!include <awslib/Database/RDS>
+!include <awslib/Storage/SimpleStorageService>
+
+title GoFuture Cross-Region Replication
+caption [[../../02-replication-schema.md Пояснения к схеме репликации]]
+
+hide stereotype
+
+skinparam defaultTextAlignment center
+
+AWSCloudGroup(southeast_asia, "AWS Cloud · Юго-Восточная Азия") {
+    RegionGroup(singapore, "Сингапур · ap-southeast-1") {
+        RDS(sg_db_primary, "БД сервисов Сингапура", "RDS for PostgreSQL", "Чтение и запись")
+        RDS(sg_db_replica, "Реплики БД сервисов Джакарты", "RDS for PostgreSQL", "Чтение")
+        queue "Apache Kafka\nПубликация в локальные топики\nКопии топиков Джакарты" as sg_kafka
+        rectangle "Camunda 8 (Zeebe)\nБрокеры кластера Юго-Восточной Азии" as sg_zeebe
+        SimpleStorageService(sg_checkpoints, "Контрольные точки Flink", "Amazon S3", "Локальные контрольные точки и копии Джакарты")
+    }
+
+    RegionGroup(jakarta, "Джакарта · ap-southeast-3") {
+        RDS(jkt_db_replica, "Реплики БД сервисов Сингапура", "RDS for PostgreSQL", "Чтение")
+        RDS(jkt_db_primary, "БД сервисов Джакарты", "RDS for PostgreSQL", "Чтение и запись")
+        queue "Apache Kafka\nПубликация в локальные топики\nКопии топиков Сингапура" as jkt_kafka
+        rectangle "Camunda 8 (Zeebe)\nБрокеры кластера Юго-Восточной Азии" as jkt_zeebe
+        SimpleStorageService(jkt_checkpoints, "Контрольные точки Flink", "Amazon S3", "Локальные контрольные точки и копии Сингапура")
+    }
+
+    sg_db_primary -[hidden]down-> sg_db_replica
+    sg_db_replica -[hidden]down-> sg_kafka
+    sg_kafka -[hidden]down-> sg_zeebe
+    sg_zeebe -[hidden]down-> sg_checkpoints
+
+    jkt_db_replica -[hidden]down-> jkt_db_primary
+    jkt_db_primary -[hidden]down-> jkt_kafka
+    jkt_kafka -[hidden]down-> jkt_zeebe
+    jkt_zeebe -[hidden]down-> jkt_checkpoints
+
+    sg_db_primary -right-> jkt_db_replica : Изменения БД и outbox Сингапура\nАсинхронная репликация RDS
+    jkt_db_primary -left-> sg_db_replica : Изменения БД и outbox Джакарты\nАсинхронная репликация RDS
+    sg_kafka -right-> jkt_kafka : Топики и позиции групп Сингапура\nАсинхронно · MirrorMaker 2
+    jkt_kafka -left-> sg_kafka : Топики и позиции групп Джакарты\nАсинхронно · MirrorMaker 2
+    sg_zeebe <-right-> jkt_zeebe : Журнал партиций Saga\nЛидеры реплицируют записи на брокеры пары\nRaft · подтверждение кворумом
+    sg_checkpoints <-right-> jkt_checkpoints : Контрольные точки каждого региона\nАсинхронно · S3 Cross-Region Replication
+}
+
+AWSCloudGroup(south_america, "AWS Cloud · Южная Америка") {
+    RegionGroup(sao_paulo, "Сан-Паулу · sa-east-1") {
+        RDS(sp_db_primary, "БД сервисов Сан-Паулу", "RDS for PostgreSQL", "Чтение и запись")
+        queue "Apache Kafka\nПубликация в локальные топики" as sp_kafka
+        rectangle "Camunda 8 (Zeebe)\nБрокеры кластера Южной Америки" as sp_zeebe
+        SimpleStorageService(sp_checkpoints, "Контрольные точки Flink", "Amazon S3", "Локальные контрольные точки")
+    }
+
+    RegionGroup(chile, "Южная Америка (Чили) · резерв") {
+        RDS(cl_db_replica, "Реплики БД сервисов Сан-Паулу", "RDS for PostgreSQL", "Чтение")
+        queue "Apache Kafka\nКопии топиков Сан-Паулу" as cl_kafka
+        rectangle "Camunda 8 (Zeebe)\nБрокеры кластера Южной Америки" as cl_zeebe
+        SimpleStorageService(cl_checkpoints, "Контрольные точки Flink", "Amazon S3", "Копии Сан-Паулу")
+    }
+
+    sp_db_primary -[hidden]down-> sp_kafka
+    sp_kafka -[hidden]down-> sp_zeebe
+    sp_zeebe -[hidden]down-> sp_checkpoints
+
+    cl_db_replica -[hidden]down-> cl_kafka
+    cl_kafka -[hidden]down-> cl_zeebe
+    cl_zeebe -[hidden]down-> cl_checkpoints
+
+    sp_db_primary -right-> cl_db_replica : Изменения БД и outbox Сан-Паулу\nАсинхронная репликация RDS
+    sp_kafka -right-> cl_kafka : Топики и позиции групп Сан-Паулу\nАсинхронно · MirrorMaker 2
+    sp_zeebe <-right-> cl_zeebe : Журнал партиций Saga\nЛидеры реплицируют записи на брокеры пары\nRaft · подтверждение кворумом
+    sp_checkpoints -right-> cl_checkpoints : Контрольные точки Сан-Паулу\nАсинхронно · S3 Cross-Region Replication
+}
+
+southeast_asia -[hidden]down-> south_america
+
+@enduml

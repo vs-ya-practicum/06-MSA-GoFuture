@@ -1,0 +1,84 @@
+@startuml GoFuture Geo-Routing
+
+!include <awslib/AWSCommon>
+!include <awslib/AWSSimplified>
+!include <awslib/Groups/AWSCloud>
+!include <awslib/Groups/Region>
+!include <awslib/NetworkingContentDelivery/Route53>
+!include <awslib/NetworkingContentDelivery/ElasticLoadBalancingApplicationLoadBalancer>
+
+title GoFuture Geo-Routing
+caption [[../../03-geo-routing.md Пояснения к схеме геомаршрутизации]]
+hide stereotype
+skinparam defaultTextAlignment center
+
+actor "Клиенты GoFuture" as clients
+
+AWSCloudGroup(gofuture) {
+    Route53(dns, "Amazon Route 53\nГеомаршрутизация DNS", "DNS · Traffic Flow", "Географическое правило выбирает маршрут по стране или континенту")
+    rectangle "Проверки готовности Route 53\nОтдельно для каждого маршрута" as health_checks
+
+    rectangle "Юго-Восточная Азия" as southeast_asia_routes {
+        rectangle "Сингапур и Малайзия\n**Основной: ap-southeast-1**\nРезервный: ap-southeast-3" as singapore_route
+        rectangle "Индонезия\n**Основной: ap-southeast-3**\nРезервный: ap-southeast-1" as jakarta_route
+        rectangle "Остальные страны Юго-Восточной Азии\nПо задержке среди допущенных регионов\nap-southeast-1 и ap-southeast-3" as southeast_asia_route
+    }
+    rectangle "Южная Америка\n**Основной: sa-east-1**\nРезервный: Чили" as south_america_route
+
+    rectangle "Региональные точки входа" as regional_ingress {
+        rectangle "Юго-Восточная Азия" as southeast_asia_ingress {
+            RegionGroup(singapore, "Сингапур · ap-southeast-1") {
+                ElasticLoadBalancingApplicationLoadBalancer(sg_alb, "ALB", "HTTPS")
+                rectangle "API Gateway" as sg_api
+            }
+
+            RegionGroup(jakarta, "Джакарта · ap-southeast-3") {
+                ElasticLoadBalancingApplicationLoadBalancer(jkt_alb, "ALB", "HTTPS")
+                rectangle "API Gateway" as jkt_api
+            }
+
+            sg_alb -down-> sg_api
+            jkt_alb -down-> jkt_api
+            sg_alb -[hidden]right-> jkt_alb
+        }
+
+        rectangle "Южная Америка" as south_america_ingress {
+            RegionGroup(sao_paulo, "Сан-Паулу · sa-east-1") {
+                ElasticLoadBalancingApplicationLoadBalancer(sp_alb, "ALB", "HTTPS")
+                rectangle "API Gateway" as sp_api
+            }
+
+            RegionGroup(chile, "Южная Америка (Чили)") {
+                ElasticLoadBalancingApplicationLoadBalancer(cl_alb, "ALB", "HTTPS")
+                rectangle "API Gateway" as cl_api
+            }
+
+            sp_alb -down-> sp_api
+            cl_alb -down-> cl_api
+            sp_alb -[hidden]right-> cl_alb
+        }
+
+        southeast_asia_ingress -[hidden]right-> south_america_ingress
+    }
+
+    dns .down.> singapore_route
+    dns .down.> jakarta_route
+    dns .down.> southeast_asia_route
+    dns .down.> south_america_route
+    health_checks .left.> dns : Состояние маршрутов
+    health_checks .down.> regional_ingress : HTTPS-проверки готовности API
+
+    ' Связи от правил к ALB обозначают записи DNS alias.
+    singapore_route -down-> sg_alb
+    singapore_route -[dashed]down-> jkt_alb
+    jakarta_route -down-> jkt_alb
+    jakarta_route -[dashed]down-> sg_alb
+    southeast_asia_route .down.> sg_alb
+    southeast_asia_route .down.> jkt_alb
+    south_america_route -down-> sp_alb
+    south_america_route -[dashed]down-> cl_alb
+}
+
+clients .down.> dns : 1. DNS-запрос имени API через резолвер\nОтвет содержит адрес выбранного ALB
+clients -[norank]-> regional_ingress : 2. HTTPS напрямую к ALB из DNS-ответа
+@enduml

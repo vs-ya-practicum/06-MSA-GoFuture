@@ -1,0 +1,126 @@
+@startuml GoFuture Regional Failover Deployment
+
+!NEW_C4_STYLE=1
+
+!include <C4/C4_Deployment>
+!include <awslib/AWSCommon>
+!include <awslib/NetworkingContentDelivery/Route53>
+!include <awslib/NetworkingContentDelivery/ElasticLoadBalancingApplicationLoadBalancer>
+!include <awslib/Database/RDS>
+
+title GoFuture Regional Failover Deployment
+
+LAYOUT_WITH_LEGEND()
+SHOW_PERSON_OUTLINE()
+
+skinparam LegendBackgroundColor #FFFFFF
+skinparam LegendFontColor #24292F
+<style>
+legend {
+    HorizontalAlignment left
+}
+</style>
+
+!function $failurePointLabel($name)
+    !return "[[../../04-failover-scenario.md#точки-отказа " + $name + "]]"
+!endfunction
+
+AddElementTag("failure", $borderColor="#C62828", $borderThickness="3")
+AddRelTag("fallback", $lineColor="#1565C0", $lineStyle=DashedLine())
+AddRelTag("replication", $lineColor="#616161", $lineStyle=DottedLine())
+
+Person(clients, "Клиенты GoFuture", "Подключаются по HTTPS к ALB из DNS-ответа.")
+
+Deployment_Node(production, "GoFuture · эксплуатация", "AWS") {
+    Deployment_Node(dns, "Amazon Route 53", "DNS · Traffic Flow", $sprite="Route53")
+
+    Boundary(southeast_asia, "Юго-Восточная Азия", "Геозона") {
+        Deployment_Node(singapore, "Сингапур", "AWS Region · ap-southeast-1") {
+            Deployment_Node(sg_alb, $failurePointLabel("Региональная точка входа"), "Application Load Balancer", $sprite="ElasticLoadBalancingApplicationLoadBalancer", $tags="failure")
+            Container(sg_api, $failurePointLabel("API Gateway"), "HTTPS / REST", $tags="failure")
+            Container(sg_booking, "Booking", "Доменный сервис")
+            ContainerDb(sg_writer, $failurePointLabel("Основная БД Booking"), "Amazon RDS for PostgreSQL", $sprite="RDS", $tags="failure")
+            ContainerDb(sg_replica, "Реплика БД Booking Джакарты", "Amazon RDS for PostgreSQL", $sprite="RDS")
+            ContainerQueue(sg_kafka, $failurePointLabel("Региональный кластер Kafka"), "Apache Kafka", $tags="failure")
+            Container(sg_zeebe, $failurePointLabel("Брокеры Zeebe"), "Camunda 8", $tags="failure")
+        }
+
+        Deployment_Node(jakarta, "Джакарта", "AWS Region · ap-southeast-3") {
+            Deployment_Node(jkt_alb, $failurePointLabel("Региональная точка входа"), "Application Load Balancer", $sprite="ElasticLoadBalancingApplicationLoadBalancer", $tags="failure")
+            Container(jkt_api, $failurePointLabel("API Gateway"), "HTTPS / REST", $tags="failure")
+            Container(jkt_booking, "Booking", "Доменный сервис")
+            ContainerDb(jkt_writer, $failurePointLabel("Основная БД Booking"), "Amazon RDS for PostgreSQL", $sprite="RDS", $tags="failure")
+            ContainerDb(jkt_replica, "Реплика БД Booking Сингапура", "Amazon RDS for PostgreSQL", $sprite="RDS")
+            ContainerQueue(jkt_kafka, $failurePointLabel("Региональный кластер Kafka"), "Apache Kafka", $tags="failure")
+            Container(jkt_zeebe, $failurePointLabel("Брокеры Zeebe"), "Camunda 8", $tags="failure")
+        }
+    }
+
+    Boundary(south_america, "Южная Америка", "Геозона") {
+        Deployment_Node(sao_paulo, "Сан-Паулу", "AWS Region · sa-east-1") {
+            Deployment_Node(sp_alb, $failurePointLabel("Региональная точка входа"), "Application Load Balancer", $sprite="ElasticLoadBalancingApplicationLoadBalancer", $tags="failure")
+            Container(sp_api, $failurePointLabel("API Gateway"), "HTTPS / REST", $tags="failure")
+            Container(sp_booking, "Booking", "Доменный сервис")
+            ContainerDb(sp_writer, $failurePointLabel("Основная БД Booking"), "Amazon RDS for PostgreSQL", $sprite="RDS", $tags="failure")
+            ContainerQueue(sp_kafka, $failurePointLabel("Региональный кластер Kafka"), "Apache Kafka", $tags="failure")
+            Container(sp_zeebe, $failurePointLabel("Брокеры Zeebe"), "Camunda 8", $tags="failure")
+        }
+
+        Deployment_Node(chile, "Южная Америка (Чили)", "AWS Region · планируемый резерв") {
+            Deployment_Node(cl_alb, $failurePointLabel("Региональная точка входа"), "Application Load Balancer", $sprite="ElasticLoadBalancingApplicationLoadBalancer", $tags="failure")
+            Container(cl_api, $failurePointLabel("API Gateway"), "HTTPS / REST", $tags="failure")
+            Container(cl_booking, "Booking", "Доменный сервис")
+            ContainerDb(cl_replica, "Реплика БД Booking Сан-Паулу", "Amazon RDS for PostgreSQL", $sprite="RDS")
+            ContainerQueue(cl_kafka, $failurePointLabel("Региональный кластер Kafka"), "Apache Kafka", $tags="failure")
+            Container(cl_zeebe, $failurePointLabel("Брокеры Zeebe"), "Camunda 8", $tags="failure")
+        }
+    }
+}
+
+Rel_D(clients, dns, "Запрашивают адрес API", "DNS")
+Rel_D(dns, sg_alb, "Возвращает адрес для основного маршрута.\nИспользует как резерв для Джакарты.")
+Rel_D(dns, jkt_alb, "Возвращает адрес для основного маршрута.\nИспользует как резерв для Сингапура.")
+Rel_D(dns, sp_alb, "Возвращает адрес для основного маршрута")
+Rel_D(dns, cl_alb, "Возвращает адрес при отказе Сан-Паулу и готовности Чили", $tags="fallback")
+
+Rel_D(sg_alb, sg_api, "Передаёт запросы")
+Rel_D(sg_api, sg_booking, "Направляет операции с поездками")
+Rel_D(sg_booking, sg_writer, "Читает и записывает данные")
+Rel_D(sg_booking, sg_replica, "Записывает после повышения реплики", $tags="fallback")
+Rel_D(sg_booking, sg_kafka, "Публикует события через outbox")
+Rel_D(sg_kafka, sg_zeebe, "Передаёт события через обработчик Camunda")
+
+Rel_D(jkt_alb, jkt_api, "Передаёт запросы")
+Rel_D(jkt_api, jkt_booking, "Направляет операции с поездками")
+Rel_D(jkt_booking, jkt_writer, "Читает и записывает данные")
+Rel_D(jkt_booking, jkt_replica, "Записывает после повышения реплики", $tags="fallback")
+Rel_D(jkt_booking, jkt_kafka, "Публикует события через outbox")
+Rel_D(jkt_kafka, jkt_zeebe, "Передаёт события через обработчик Camunda")
+
+Rel_D(sp_alb, sp_api, "Передаёт запросы")
+Rel_D(sp_api, sp_booking, "Направляет операции с поездками")
+Rel_D(sp_booking, sp_writer, "Читает и записывает данные")
+Rel_D(sp_booking, sp_kafka, "Публикует события через outbox")
+Rel_D(sp_kafka, sp_zeebe, "Передаёт события через обработчик Camunda")
+
+Rel_D(cl_alb, cl_api, "Передаёт запросы")
+Rel_D(cl_api, cl_booking, "Направляет операции с поездками")
+Rel_D(cl_booking, cl_replica, "Записывает после повышения реплики", $tags="fallback")
+Rel_D(cl_booking, cl_kafka, "Публикует события через outbox")
+Rel_D(cl_kafka, cl_zeebe, "Передаёт события через обработчик Camunda")
+
+Rel_R(sg_writer, jkt_replica, "Реплицирует изменения данных Сингапура", $tags="replication")
+Rel_L(jkt_writer, sg_replica, "Реплицирует изменения данных Джакарты", $tags="replication")
+Rel_R(sp_writer, cl_replica, "Реплицирует изменения данных Сан-Паулу", $tags="replication")
+
+BiRel_R(sg_zeebe, jkt_zeebe, "Реплицируют журнал партиций Saga", "Raft", $tags="replication")
+BiRel_R(sp_zeebe, cl_zeebe, "Реплицируют журнал партиций Saga", "Raft", $tags="replication")
+
+legend bottom
+    <color:#C62828><b>Толстая красная рамка</b></color>: Точка отказа
+    <b>$failurePointLabel("Сервис")</b>: Ссылка на пояснение по точке отказа
+
+    <color:#1565C0><b>– – –</b></color>: Путь после переключения
+    <color:#616161><b>·······</b></color>: Репликация
+endlegend
+@enduml
