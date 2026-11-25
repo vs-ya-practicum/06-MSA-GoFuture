@@ -7,39 +7,39 @@
 <table style="font-size: 0.85rem;">
   <thead>
     <tr>
-      <th scope="col" style="vertical-align: top;">Регион AWS</th>
-      <th scope="col" style="vertical-align: top;">Роль региона</th>
-      <th scope="col" style="vertical-align: top;">Обоснование выбора</th>
+      <th valign="top" scope="col" style="vertical-align: top;">Регион AWS</th>
+      <th valign="top" scope="col" style="vertical-align: top;">Роль региона</th>
+      <th valign="top" scope="col" style="vertical-align: top;">Обоснование выбора</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <th scope="rowgroup" colspan="3" style="vertical-align: top; text-align: left;">Юго-Восточная Азия</th>
+      <th valign="top" scope="rowgroup" colspan="3" style="vertical-align: top; text-align: left;">Юго-Восточная Азия</th>
     </tr>
     <tr>
-      <td style="vertical-align: top;">Сингапур (<code>ap-southeast-1</code>)</td>
-      <td style="vertical-align: top;">Обслуживает трафик из Сингапура и Малайзии. При отказе региона в Джакарте принимает его трафик.</td>
-      <td style="vertical-align: top;">Из Сингапура сетевая задержка до региона составила 1,5 мс. По выборке из 11 городов Малайзии задержка составила 11,2 мс. Этот показатель служит ориентиром для Куала-Лумпура. <a href="https://pingcloud.io/best-country-by-region/2026-10/aws-singapore-sg/">PingCloud, октябрь 2026</a></td>
+      <td valign="top" style="vertical-align: top;">Сингапур (<code>ap-southeast-1</code>)</td>
+      <td valign="top" style="vertical-align: top;">Обслуживает трафик из Сингапура и Малайзии. При отказе региона в Джакарте принимает его трафик.</td>
+      <td valign="top" style="vertical-align: top;">Из Сингапура сетевая задержка до региона составила 1,5 мс. По выборке из 11 городов Малайзии задержка составила 11,2 мс. Этот показатель служит ориентиром для Куала-Лумпура. <a href="https://pingcloud.io/best-country-by-region/2026-10/aws-singapore-sg/">PingCloud, октябрь 2026</a></td>
     </tr>
     <tr>
-      <td style="vertical-align: top;">Джакарта (<code>ap-southeast-3</code>)</td>
-      <td style="vertical-align: top;">Обслуживает трафик из Индонезии. При отказе региона в Сингапуре принимает его трафик.</td>
-      <td style="vertical-align: top;">По выборке из 36 городов Индонезии сетевая задержка до региона в Джакарте составила 12,2 мс. Для той же выборки задержка до региона в Сингапуре составила 24,3 мс. Из Сингапура до резервного региона в Джакарте задержка составила 16,2 мс. <a href="https://pingcloud.io/best-region-by-country/indonesia/">PingCloud, Индонезия</a> · <a href="https://pingcloud.io/best-region-by-country/singapore/">PingCloud, Сингапур</a></td>
+      <td valign="top" style="vertical-align: top;">Джакарта (<code>ap-southeast-3</code>)</td>
+      <td valign="top" style="vertical-align: top;">Обслуживает трафик из Индонезии. При отказе региона в Сингапуре принимает его трафик.</td>
+      <td valign="top" style="vertical-align: top;">По выборке из 36 городов Индонезии сетевая задержка до региона в Джакарте составила 12,2 мс. Для той же выборки задержка до региона в Сингапуре составила 24,3 мс. Из Сингапура до резервного региона в Джакарте задержка составила 16,2 мс. <a href="https://pingcloud.io/best-region-by-country/indonesia/">PingCloud, Индонезия</a> · <a href="https://pingcloud.io/best-region-by-country/singapore/">PingCloud, Сингапур</a></td>
     </tr>
   </tbody>
   <tbody>
     <tr>
-      <th scope="rowgroup" colspan="3" style="vertical-align: top; text-align: left;">Южная Америка</th>
+      <th valign="top" scope="rowgroup" colspan="3" style="vertical-align: top; text-align: left;">Южная Америка</th>
     </tr>
     <tr>
-      <td style="vertical-align: top;">Сан-Паулу (<code>sa-east-1</code>)</td>
-      <td style="vertical-align: top;">Обслуживает трафик из Южной Америки.</td>
-      <td style="vertical-align: top;">Сан-Паулу — единственный общедоступный регион AWS в Южной Америке. Установление TCP-соединения с региональной точкой подключения DynamoDB заняло около 2 мс из Сан-Паулу и 33 мс из Буэнос-Айреса. <a href="https://docs.aws.amazon.com/global-infrastructure/latest/regions/aws-regions.html">Регионы AWS</a> · <a href="https://tracemapper.com/blog/cloud-latency-33-cities">TraceMapper, сентябрь 2026</a></td>
+      <td valign="top" style="vertical-align: top;">Сан-Паулу (<code>sa-east-1</code>)</td>
+      <td valign="top" style="vertical-align: top;">Обслуживает трафик из Южной Америки.</td>
+      <td valign="top" style="vertical-align: top;">Сан-Паулу — единственный общедоступный регион AWS в Южной Америке. Установление TCP-соединения с региональной точкой подключения DynamoDB заняло около 2 мс из Сан-Паулу и 33 мс из Буэнос-Айреса. <a href="https://docs.aws.amazon.com/global-infrastructure/latest/regions/aws-regions.html">Регионы AWS</a> · <a href="https://tracemapper.com/blog/cloud-latency-33-cities">TraceMapper, сентябрь 2026</a></td>
     </tr>
     <tr>
-      <td style="vertical-align: top;">Южная Америка (Чили)</td>
-      <td style="vertical-align: top;">При отказе региона в Сан-Паулу принимает трафик из Южной Америки.</td>
-      <td style="vertical-align: top;">Размещение в Чили сохраняет резерв в Южной Америке. 11 ноября 2026 года AWS сообщила, что планирует открыть регион для всех клиентов к концу года. Этот срок укладывается в план развёртывания GoFuture. <a href="https://www.aboutamazon.com/news/aws/aws-south-america-chile-region-launch">Статус региона AWS в Чили</a></td>
+      <td valign="top" style="vertical-align: top;">Южная Америка (Чили)</td>
+      <td valign="top" style="vertical-align: top;">При отказе региона в Сан-Паулу принимает трафик из Южной Америки.</td>
+      <td valign="top" style="vertical-align: top;">Размещение в Чили сохраняет резерв в Южной Америке. 11 ноября 2026 года AWS сообщила, что планирует открыть регион для всех клиентов к концу года. Этот срок укладывается в план развёртывания GoFuture. <a href="https://www.aboutamazon.com/news/aws/aws-south-america-chile-region-launch">Статус региона AWS в Чили</a></td>
     </tr>
   </tbody>
 </table>
