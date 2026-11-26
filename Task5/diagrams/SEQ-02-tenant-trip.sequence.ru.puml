@@ -1,0 +1,72 @@
+@startuml GoFuture Tenant Trip Update Sequence
+title GoFuture Tenant Trip Update Sequence
+
+actor "Корпоративный менеджер" as user
+boundary "Корпоративный портал" as portal
+control "IAM" as iam
+participant "Route 53" as dns
+
+box "Сингапур · регион входа"
+    boundary "ALB с AWS WAF" as sg_alb
+    control "API Gateway" as sg_api
+end box
+
+control "Настройки тенантов" as config
+
+box "Джакарта · регион с правом записи"
+    boundary "ALB с AWS WAF" as jkt_alb
+    control "API Gateway" as jkt_api
+    control "Booking" as booking
+    database "БД Booking для тенанта\nРегион данных · Джакарта" as booking_db
+end box
+
+user -> portal : Входит в портал
+portal -> iam : Запускает вход через SSO
+iam --> portal : Возвращает токен доступа\nс tenantId и ролями
+
+user -> portal : Запрашивает изменение корпоративной поездки
+portal -> dns : Запрашивает адрес API через DNS-резолвер
+dns --> portal : Возвращает адрес ALB в Сингапуре
+portal -> sg_alb : Передаёт идентификатор поездки\nи токен доступа по HTTPS
+sg_alb -> sg_api : Передаёт запрос
+
+sg_api -> sg_api : Проверяет токен, доступ к тенанту\nи право на операцию
+sg_api -> config : Запрашивает статус и разрешённые регионы тенанта
+config --> sg_api : Возвращает статус и разрешённые регионы
+sg_api -> sg_api : Определяет регион данных поездки\nи регион с правом записи
+
+note over sg_api
+    Данные поездки относятся к Джакарте.
+    В этом примере Джакарта принимает запись.
+end note
+
+alt Джакарта готова и имеет право записи
+    sg_api -> jkt_alb : Передаёт HTTPS-запрос с проверенным tenantId\nи идентификатором региона данных
+    jkt_alb -> jkt_api : Передаёт запрос
+    jkt_api -> jkt_api : Проверяет контекст тенанта,\nготовность и право региона на запись
+    jkt_api -> booking : Передаёт запрос с tenantId\nи идентификатором региона данных
+    booking -> booking : Выбирает БД из доверенной конфигурации\nпо tenantId и региону данных
+    booking -> booking_db : Ищет поездку с учётными данными\nсервиса для этой БД
+    booking_db --> booking : Возвращает результат поиска
+    booking -> booking : Проверяет роль и доступ к счёту поездки
+
+    alt Поездка найдена и изменение разрешено
+        booking -> booking_db : Записывает изменение
+        booking_db --> booking : Подтверждает фиксацию
+        booking --> jkt_api : Возвращает успешный результат
+    else Поездка недоступна для изменения
+        booking --> jkt_api : Отклоняет изменение
+    end
+
+    jkt_api --> jkt_alb : Результат
+    jkt_alb --> sg_api : Результат
+    sg_api --> sg_alb : Результат
+    sg_alb --> portal : Результат
+else Нет готового региона с правом записи
+    sg_api --> sg_alb : Сервис недоступен
+    sg_alb --> portal : Сервис недоступен
+end
+
+portal --> user : Показывает результат
+
+@enduml

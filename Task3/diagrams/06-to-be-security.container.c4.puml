@@ -1,0 +1,77 @@
+@startuml GoFuture To-Be Security Container
+!NEW_C4_STYLE=1
+!include <C4/C4_Container>
+
+title GoFuture To-Be Security Container
+
+skinparam NoteTextAlignment left
+skinparam NoteBackgroundColor #FFF1F1
+skinparam NoteBorderColor #C62828
+skinparam NoteFontColor #991B1B
+
+' При NEW_C4_STYLE=1 библиотека меняет местами $bgColor и $fontColor.
+AddElementTag("security-control", $bgColor="#991B1B", $fontColor="#FFF1F1", $borderColor="#C62828", $legendText="Новые и изменённые средства защиты")
+AddElementTag("transition", $bgColor="#666666", $legendText="Только на время миграции")
+AddRelTag("security-route", $textColor="#991B1B", $lineColor="#C62828", $legendText="Изменённый путь запросов")
+AddRelTag("waf-association", $textColor="#991B1B", $lineColor="#C62828", $lineStyle=DashedLine(), $legendText="Привязка AWS WAF к ALB")
+
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+SHOW_PERSON_OUTLINE()
+
+Person(passenger, "Пассажир")
+Person(driver_user, "Водитель")
+Person(manager, "Корпоративный менеджер")
+Person(accountant, "Бухгалтер")
+Person(developer, "Разработчик")
+Person(sre, "SRE-инженер")
+
+System_Boundary(gofuture, "GoFuture") {
+    Container(passenger_app, "Пассажирское приложение", "iOS / Android / Huawei", "Заказывает поездки и показывает их статус.")
+    Container(driver_app, "Водительское приложение", "iOS / Android / Huawei", "Передаёт координаты, принимает заказы и показывает выплаты.")
+    Container(corporate_portal, "Корпоративный портал", "Веб-приложение", "Управляет корпоративными поездками и счетами.")
+    Container(admin_portal, "Админ-панель", "Веб-приложение", "Поддерживает контроль выплат водителям.")
+
+    Container(alb, "Региональный ALB", "AWS Application Load Balancer", "Принимает HTTPS в каждом регионе, включая резервный.", $tags="security-control")
+    Container(waf, "AWS WAF", "Региональный Web ACL", "Проверяет запросы к ALB по управляемым правилам AWS.", $tags="security-control")
+    Container(api, "API Gateway", "HTTPS / REST", "Сохраняет контракты API и направляет операции по этапам миграции.", $tags="security-control")
+
+    note right of api
+        **Группы безопасности VPC**
+        ALB принимает публичный HTTPS.
+        API Gateway принимает запросы только от группы безопасности ALB.
+        Внутренние сервисы и БД принимают подключения
+        только от разрешённых источников на требуемых портах.
+    end note
+
+    Container(monolith, "GoFuture Monolith", "Django", "Обслуживает операции, которые GoFuture ещё переносит в доменные сервисы.", $tags="transition")
+    Boundary(target_backend, "Микросервисная платформа", "Доменные сервисы, Kafka и хранилища")
+}
+
+Boundary(observability, "Observability", "Метрики, логи и оповещения")
+Boundary(cicd, "CI/CD", "Сборка и развёртывание")
+Boundary(external_systems, "Внешние провайдеры", "Платежи, выплаты, карты и push-уведомления")
+
+Rel(passenger, passenger_app, "Заказывает и отслеживает поездки")
+Rel(driver_user, driver_app, "Принимает заказы на поездки и отслеживает выплаты")
+Rel(manager, corporate_portal, "Управляет корпоративными поездками и счетами")
+Rel(accountant, admin_portal, "Контролирует выплаты")
+
+Rel_D(passenger_app, alb, "Стоимость, создание и статус поездки", "HTTPS", $tags="security-route")
+Rel_D(driver_app, alb, "Поездки, координаты и выплаты", "HTTPS", $tags="security-route")
+Rel_D(corporate_portal, alb, "Корпоративные поездки и счета", "HTTPS", $tags="security-route")
+Rel_D(admin_portal, alb, "Операции контроля выплат", "HTTPS", $tags="security-route")
+Rel_L(waf, alb, "Применяет Web ACL к запросам ALB", $tags="waf-association")
+Rel_D(alb, api, "Передаёт запросы на приватный API Gateway", $tags="security-route")
+
+Rel_D(api, monolith, "Направляет операции на время миграции", "API монолита")
+Rel_D(api, target_backend, "Направляет операции в доменные сервисы", "HTTPS / REST")
+Rel_R(monolith, target_backend, "Публикует события поездок на время миграции", "Kafka")
+
+Rel_D(target_backend, external_systems, "Обращается к API провайдеров", "HTTPS")
+Rel(developer, cicd, "Запускает сборки и проверяет результаты")
+Rel(cicd, target_backend, "Развёртывает сервисы")
+Rel(sre, observability, "Просматривает метрики и получает оповещения")
+Rel(observability, target_backend, "Собирает метрики и логи")
+
+@enduml

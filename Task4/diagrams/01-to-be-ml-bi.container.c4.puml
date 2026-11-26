@@ -1,0 +1,89 @@
+@startuml GoFuture To-Be ML and BI Container
+!NEW_C4_STYLE=1
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title GoFuture To-Be ML and BI Container
+
+AddElementTag("transition", $bgColor="#666666", $legendText="Миграция")
+' При NEW_C4_STYLE=1 библиотека меняет местами $bgColor и $fontColor.
+AddElementTag("task-4", $bgColor="#991B1B", $fontColor="#FFF1F1", $borderColor="#C62828", $legendText="Изменения задания 4")
+AddElementTag("postgresql", $bgColor="#172538", $fontColor="#D5E5F5", $borderColor="#4F76A0", $legendText="PostgreSQL")
+AddElementTag("data-infrastructure", $bgColor="#302000", $fontColor="#FFE6AD", $borderColor="#956812", $legendText="Kafka, Redis, ClickHouse")
+AddRelTag("async", $textColor=$ARROW_FONT_COLOR, $lineColor=$ARROW_COLOR, $lineStyle=DashedLine(), $legendText="Асинхронный обмен")
+AddRelTag("task-4", $textColor="#991B1B", $lineColor="#C62828", $legendText="Поток данных задания 4")
+
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+
+' Основа: задание 1, To-Be Container.
+' Потоковая обработка для Pricing: задание 2, ADR событийной платформы.
+System_Boundary(gofuture, "GoFuture") {
+    Container(passenger_app, "Приложение пассажира", "iOS / Android / Huawei")
+    Container(driver_app, "Приложение водителя", "iOS / Android / Huawei")
+    Container(api, "API Gateway", "HTTPS / REST")
+    Container(monolith, "GoFuture Monolith", "Django", "Операции до переноса.", $tags="transition")
+
+    Boundary(target_backend, "Микросервисная платформа") {
+        Container(booking, "Booking", "Доменный сервис", "Поездки и подтверждённые назначения.")
+        Container(driver_svc, "Driver", "Доменный сервис", "Назначает и освобождает водителей.")
+        Container(geography, "Geography", "Доменный сервис", "Зоны и маршруты.")
+        Container(pricing, "Pricing", "Доменный сервис", "Рассчитывает стоимость поездки.")
+        Container(payments, "Payments", "Доменный сервис", "Платежи пассажиров.")
+        Container(fraud, "Fraud", "Доменный сервис", "Оценивает риск и фиксирует исходы проверок.")
+        ContainerDb(pricing_db, "Правила ценообразования", "PostgreSQL", "Тарифы и пределы надбавок.", $tags="postgresql")
+        ContainerDb(platform_redis, "Redis платформы", "Кеш", $tags="data-infrastructure")
+        ContainerQueue(kafka, "Kafka", "Apache Kafka", "Региональные топики.", $tags="data-infrastructure")
+        Container(pricing_stream, "Потоковый расчёт для Pricing", "Apache Flink")
+        System(other_backend, "Остальные сервисы", "Payouts, Notification.")
+
+        Boundary(analytics_boundary, "Analytics") {
+            Container(analytics, "Analytics", "Доменный сервис")
+            Container(analytics_engine, "Аналитический конвейер", "Spark / Flink", "Считает заявки по регионам, зонам и окнам.", $tags="task-4")
+            ContainerDb(analytics_db, "Аналитические данные", "ClickHouse", $tags="data-infrastructure")
+            Container(bi, "DataLens", "BI", "Цены, назначения, прогноз спроса и отчёт о фроде.")
+        }
+    }
+}
+
+System(shared_tooling, "Observability и CI/CD")
+System_Ext(yandex_maps, "Яндекс Карты")
+System_Ext(other_providers, "Внешние провайдеры", "Платежи, выплаты, push.")
+System_Ext(ml, "Amazon SageMaker AI", "Обучение, прогнозы и оценки риска.", $tags="task-4")
+
+Rel(passenger_app, api, "Стоимость и поездки", "HTTPS / REST")
+Rel(driver_app, api, "Координаты и ответы водителя", "HTTPS / REST")
+Rel(api, monolith, "Операции до переноса", "API монолита")
+Rel(api, booking, "Стоимость и поездки", "HTTPS / REST")
+Rel(api, driver_svc, "Ответы на предложения", "HTTPS / REST")
+Rel(api, geography, "Координаты", "HTTPS / REST")
+Rel(booking, geography, "Маршрут, зона и регион посадки", "HTTPS / REST")
+Rel(booking, pricing, "Расчёт стоимости (зона, км, минуты)", "HTTPS / REST")
+Rel(booking, fraud, "Запрашивает оценку риска поездки", "Контракт сервиса")
+Rel(payments, fraud, "Запрашивает оценку риска платежа", "Контракт сервиса")
+Rel(fraud, ml, "Запрашивает балл риска по поездке или платежу", $tags="task-4")
+Rel(geography, yandex_maps, "Геоданные и маршруты", "HTTPS")
+Rel(pricing, pricing_db, "Читает тарифы", "SQL")
+Rel(pricing, platform_redis, "Кеширует тарифы, спрос и предложение", "Redis")
+
+Rel(monolith, kafka, "События поездок до перехода на Booking", "Kafka", $tags="async")
+Rel(booking, kafka, "BookingCreatedFact, подтверждение назначения и отмена", "Kafka", $tags="async")
+Rel(driver_svc, kafka, "Назначение и освобождение водителя", "Kafka", $tags="async")
+Rel(geography, kafka, "Координаты, зона и время наблюдения", "Kafka", $tags="async")
+Rel(payments, kafka, "Результаты платежей", "Kafka", $tags="async")
+Rel(kafka, pricing_stream, "Поездки, назначения, координаты", "Kafka", $tags="async")
+Rel(pricing_stream, kafka, "Спрос и предложение по зонам и окнам", "Kafka", $tags="async")
+Rel(kafka, pricing, "Актуальный спрос и предложение", "Kafka", $tags="async")
+
+Rel(pricing, kafka, "Время, зона посадки, базовая и предложенная цены", "Kafka", $tags="task-4")
+Rel(fraud, kafka, "Оценки риска и подтверждённые исходы проверок", "Kafka", $tags="task-4")
+Rel(kafka, analytics, "Цены, спрос, предложение, заявки, назначения, платежи и данные о фроде", "Kafka", $tags="task-4")
+Rel(analytics, analytics_engine, "Данные для ML и BI")
+Rel(analytics_engine, analytics_db, "Цены, прогнозы, фактические данные и результаты проверок фрода")
+Rel(bi, analytics_db, "Читает данные для отчётов", "SQL")
+Rel(analytics_engine, ml, "История цен, спроса, предложения, заявок, назначений, платежей и исходов проверок", $tags="task-4")
+Rel(ml, analytics_engine, "Прогноз числа заявок и оценка числа поездок с водителем", $tags="task-4")
+
+Rel(other_backend, other_providers, "Вызывает API", "HTTPS")
+Rel(shared_tooling, target_backend, "Метрики, логи и развёртывание")
+
+@enduml
