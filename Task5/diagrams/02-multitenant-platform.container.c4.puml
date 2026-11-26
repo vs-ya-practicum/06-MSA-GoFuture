@@ -49,7 +49,7 @@ System_Boundary(gofuture, "GoFuture") {
     Boundary(region, "Контур в каждом регионе обслуживания") {
         Container(ingress, "Точка входа", "ALB / AWS WAF", "Региональный адрес возвращает Route 53.")
         Container(gateway, "API Gateway", "HTTPS API без состояния", "<color:#991B1B>Проверяет токен.</color> Выбирает разрешённый, готовый регион. Для изменений проверяет право региона на запись.")
-        Container(booking, "Booking", "Доменный сервис", "<color:#991B1B>Проверяет роль и доступ к записи. Выбирает БД по tenantId и региону данных.</color>")
+        Container(booking, "Booking", "Доменный сервис", "<color:#991B1B>Проверяет право на операцию и доступ к поездке. Общий модуль доступа к данным выбирает БД по tenantId и региону данных.</color>")
         note right of booking
             Booking показывает типовой путь запроса к доменному сервису.
         end note
