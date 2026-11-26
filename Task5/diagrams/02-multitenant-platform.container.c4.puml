@@ -1,0 +1,114 @@
+@startuml GoFuture Multitenant Container
+!NEW_C4_STYLE=1
+!include <C4/C4_Container>
+
+title GoFuture Multitenant Container
+
+LAYOUT_TOP_DOWN()
+SHOW_PERSON_OUTLINE()
+skinparam NoteTextAlignment left
+skinparam NoteFontColor #991B1B
+
+AddElementTag("task-5", $bgColor="#991B1B", $fontColor="#FFF1F1", $borderColor="#C62828")
+AddBoundaryTag("task-5", $bgColor="#991B1B", $fontColor="#FFF1F1", $borderColor="#C62828", $borderStyle=DashedLine())
+AddRelTag("task-5", $textColor="#991B1B", $lineColor="#C62828")
+AddRelTag("setup", $textColor="#991B1B", $lineColor="#C62828", $lineStyle=DashedLine())
+
+Person(passenger, "Пассажир")
+Person(driver, "Водитель")
+Person(manager, "Корпоративный менеджер")
+Person(accountant, "Бухгалтер")
+Person(partner_admin, "Администратор партнёра", $tags="task-5")
+Person(operator, "Оператор подключения", $tags="task-5")
+Person(sre, "SRE GoFuture")
+
+System_Boundary(gofuture, "GoFuture") {
+    Boundary(apps, "Клиентские приложения") {
+        Container(passenger_app, "Пассажирское приложение", "iOS / Android / Huawei", "Заказ, отслеживание и отмена поездок.")
+        Container(driver_app, "Водительское приложение", "iOS / Android / Huawei", "Предложения, поездки, координаты и выплаты.")
+        Container(portal, "Корпоративный портал", "Веб", "Корпоративные поездки и счета.")
+        Container(admin_panel, "Админ-панель", "Веб", "Контроль выплат водителям.")
+    }
+
+    interface "<color:#991B1B>SSO IAM</color>" as iam_signin #C62828
+
+    Container(partner_admin_ui, "Интерфейс администрирования", "Веб", "Сотрудники, роли и настройки тенанта.", $tags="task-5")
+    Container(bi, "DataLens", "BI", "<color:#991B1B>Проверяет права на отчёты в выбранном тенанте.</color>")
+
+    Boundary(tenant_admin, "Контур управления тенантами", $tags="task-5") {
+        Container(iam, "IAM", "SSO / RBAC", "Проверяет доступ к партнёру. Выдаёт токен с tenantId и ролями.", $tags="task-5")
+        note right of iam
+            Роли назначаются в пределах тенанта.
+            [[../../01-roles-data-isolation.md Роли и доступ к данным]]
+        end note
+
+        Container(config, "Настройки тенантов", "Сервис", "Статус, разрешённые регионы и включённые функции.", $tags="task-5")
+        Container(onboarding, "Подключение", "Автоматический процесс", "Активирует тенант после проверок доступа, ресурсов и мониторинга.", $tags="task-5")
+    }
+
+    Boundary(region, "Контур в каждом регионе обслуживания") {
+        Container(ingress, "Точка входа", "ALB / AWS WAF", "Региональный адрес возвращает Route 53.")
+        Container(gateway, "API Gateway", "HTTPS API без состояния", "<color:#991B1B>Проверяет токен.</color> Выбирает разрешённый, готовый регион. Для изменений проверяет право региона на запись.")
+        Container(booking, "Booking", "Доменный сервис", "<color:#991B1B>Проверяет право на операцию и доступ к поездке. Общий модуль доступа к данным выбирает БД по tenantId и региону данных.</color>")
+        note right of booking
+            Booking показывает типовой путь запроса к доменному сервису.
+        end note
+
+        Boundary(analytics, "Аналитика", "BI и ML <color:#991B1B>по тенантам в разрешённых регионах</color>")
+
+        Boundary(data, "Инфраструктура данных региона", $tags="task-5") {
+            ContainerDb(postgres, "Операционные БД", "PostgreSQL", "<color:#991B1B>БД и права по тенанту, сервису и региону данных.</color>")
+            ContainerQueue(kafka, "Kafka", "Apache Kafka", "<color:#991B1B>ACL на топики и группы тенанта.</color>")
+            ContainerDb(clickhouse, "Аналитические БД", "ClickHouse", "<color:#991B1B>БД по тенанту и региону данных. Раздельные права записи и чтения.</color>")
+            note as cache_and_search
+                В каждом регионе развёртывается своя инфраструктура.
+                Тенанты используют отдельные логические ресурсы внутри региона.
+                Сервисы используют учётные данные сервиса для тенанта.
+                Redis · ACL команд и префиксов тенанта и сервиса.
+                Elasticsearch · права на индекс тенанта и региона данных.
+                Копии сохраняют те же права доступа.
+                [[../../01-roles-data-isolation.md#tenant-data-isolation Изоляция данных]]
+            end note
+        }
+    }
+
+    interface "<color:#991B1B>Телеметрия региона</color>" as regional_telemetry #C62828
+    Boundary(monitoring, "Мониторинг", "Метрики, служебные логи и оповещения")
+}
+
+Rel(passenger, passenger_app, "Поездки")
+Rel(driver, driver_app, "Поездки и выплаты")
+Rel(manager, portal, "Поездки и счета")
+Rel(manager, bi, "Бизнес-отчёты")
+Rel(accountant, admin_panel, "Контроль выплат")
+Rel(accountant, bi, "Финансовые отчёты")
+Rel(partner_admin, partner_admin_ui, "Сотрудники, роли и настройки", $tags="task-5")
+
+Rel_R(apps, iam_signin, "Вход (получение токена)", $tags="task-5")
+iam_signin -[#C62828]- iam
+Rel(partner_admin_ui, iam, "Вход для партнёра", "SSO", $tags="task-5")
+Rel(partner_admin_ui, iam, "Доступ сотрудников и роли", "HTTPS", $tags="task-5")
+Rel(partner_admin_ui, config, "Настройки своего тенанта", "HTTPS", $tags="task-5")
+Rel(bi, iam, "Вход для партнёра", "SSO", $tags="task-5")
+Rel(iam, config, "Определяет tenantId", $tags="task-5")
+Rel(apps, ingress, "Запрос с токеном", "HTTPS", $tags="task-5")
+Rel(ingress, gateway, "Передаёт запрос")
+Rel(gateway, config, "Статус и регионы тенанта", $tags="task-5")
+Rel(gateway, booking, "Запрос, tenantId и регион данных", $tags="task-5")
+Rel(booking, config, "Функции тенанта", $tags="task-5")
+Rel(booking, postgres, "Чтение и запись с правами сервиса для тенанта", $tags="task-5")
+Rel(booking, kafka, "События поездок с tenantId", $tags="task-5")
+Rel(kafka, analytics, "События тенанта", $tags="task-5")
+Rel(analytics, clickhouse, "Результаты по тенанту", $tags="task-5")
+Rel(bi, clickhouse, "Подключение тенанта на чтение", $tags="task-5")
+
+Rel(operator, onboarding, "Партнёр, администратор, регионы, функции", $tags="setup")
+Rel(onboarding, config, "Регистрирует tenantId и статус", $tags="setup")
+Rel(onboarding, iam, "Назначает роли и администратора", $tags="setup")
+Rel(onboarding, data, "Готовит ресурсы и права", $tags="setup")
+Rel(onboarding, monitoring, "Настраивает дашборды и оповещения", $tags="setup")
+Rel_R(regional_telemetry, monitoring, "Метрики и логи по региону и тенанту", $tags="task-5")
+Rel(tenant_admin, monitoring, "Сбои входа и подключения", $tags="task-5")
+BiRel(sre, monitoring, "Диагностика и оповещения")
+
+@enduml
