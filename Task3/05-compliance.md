@@ -21,22 +21,22 @@ GoFuture согласует передачу и обработку персон�
     <tr>
       <td valign="top" style="vertical-align: top;">Малайзия → Сингапур</td>
       <td valign="top" style="vertical-align: top;">Обрабатывать запросы пользователей из Малайзии по основному маршруту.</td>
-      <td valign="top" style="vertical-align: top;">Проверить применимость малайзийских правил к первичной передаче персональных данных в Сингапур. Согласовать условия этой передачи до запуска маршрута. <a href="https://www.pdp.gov.my/en/akta/personal-data-protection-guidelines-on-cross-border-transfer-of-personal-data-cbpdt/">Руководство Малайзии</a></td>
+      <td valign="top" style="vertical-align: top;">Проверить применимость малайзийских правил к первичной передаче персональных данных в Сингапур. Согласовать условия этой передачи до запуска маршрута.</td>
     </tr>
     <tr>
       <td valign="top" style="vertical-align: top;">Сингапур → Джакарта</td>
       <td valign="top" style="vertical-align: top;">Копировать данные маршрута Сингапура и обрабатывать его запросы в Джакарте при отказе.</td>
-      <td valign="top" style="vertical-align: top;">Подтвердить, что данные при передаче из Сингапура получают сопоставимый уровень защиты по PDPA. Для данных, которые поступили из Малайзии, проверить условия дальнейшей передачи в Джакарту. <a href="https://www.pdpc.gov.sg/-/media/Files/PDPC/PDF-Files/Advisory-Guidelines/AG-on-Key-Concepts/Advisory-Guidelines-on-Key-Concepts-in-the-PDPA-17-May-2022.pdf">Разъяснения PDPC, раздел 19</a> · <a href="https://www.pdp.gov.my/en/akta/personal-data-protection-guidelines-on-cross-border-transfer-of-personal-data-cbpdt/">Руководство Малайзии</a></td>
+      <td valign="top" style="vertical-align: top;">Подтвердить, что данные при передаче из Сингапура получают сопоставимый уровень защиты. Для данных, которые поступили из Малайзии, проверить условия дальнейшей передачи в Джакарту.</td>
     </tr>
     <tr>
       <td valign="top" style="vertical-align: top;">Джакарта → Сингапур</td>
       <td valign="top" style="vertical-align: top;">Копировать данные маршрута Джакарты и обрабатывать его запросы в Сингапуре при отказе.</td>
-      <td valign="top" style="vertical-align: top;">Определить условие передачи из Индонезии по статье 56 закона № 27/2022. Сначала проверить уровень защиты в стране получателя. При необходимости проверить обязательные гарантии или применимость согласия. <a href="https://peraturan.bpk.go.id/Home/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">Закон Индонезии, статья 56</a></td>
+      <td valign="top" style="vertical-align: top;">Определить условие передачи из Индонезии. Сначала проверить уровень защиты в стране получателя. При необходимости проверить обязательные гарантии или применимость согласия.</td>
     </tr>
     <tr>
       <td valign="top" style="vertical-align: top;">Сан-Паулу → Чили</td>
       <td valign="top" style="vertical-align: top;">Копировать данные маршрута Сан-Паулу и обрабатывать его запросы в Чили при отказе.</td>
-      <td valign="top" style="vertical-align: top;">Определить правовое основание обработки и механизм передачи по LGPD. Проверить требования к хранению и обработке данных в Чили на дату запуска. <a href="https://www.gov.br/anpd/pt-br/assuntos/assuntos-internacionais/transferencia-internacional-de-dados/international-affairs">Правила ANPD</a> · <a href="https://www.bcn.cl/leychile/Navegar?idNorma=141599">Закон Чили № 19.628</a> · <a href="https://www.bcn.cl/leychile/Navegar?idNorma=1209272">Поправки № 21.719</a></td>
+      <td valign="top" style="vertical-align: top;">Определить правовое основание обработки и механизм передачи из Бразилии. Проверить требования к хранению и обработке данных в Чили на дату запуска.</td>
     </tr>
   </tbody>
 </table>
